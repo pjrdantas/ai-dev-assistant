@@ -1,0 +1,70 @@
+# Java e Maven
+*.class
+*.jar
+*.war
+*.ear
+target/
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Node.js e TypeScript
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Eclipse
+.classpath
+.project
+.settings/
+.factorypath
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+Desktop.ini
+$RECYCLE.BIN/
+
+# Variaveis de ambiente e segredos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.json
+secrets.json
+
+# Logs e arquivos temporarios
+*.log
+logs/
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Sistema operacional
+.DS_Store
+

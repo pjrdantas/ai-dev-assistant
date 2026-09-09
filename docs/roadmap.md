@@ -1,0 +1,124 @@
+# Roadmap
+
+O desenvolvimento será incremental. Cada fase deverá ser descrita antes de seu início, validada com testes proporcionais ao risco e concluída antes do avanço para a próxima.
+
+## Fase 0 — especificação e decisões arquiteturais
+
+Status: concluída em 2026-09-09.
+
+Objetivo: consolidar o que será construído antes da criação do código.
+
+- registrar a especificação do produto;
+- definir a arquitetura do MVP;
+- registrar ADRs fundamentais;
+- definir o contrato REST inicial;
+- definir critérios de aceite do MVP;
+- manter a regra `memory-first` como invariante.
+
+Saída esperada: documentação suficiente para iniciar o backend sem decisões estruturais implícitas.
+
+## Fase 1 — backend base
+
+Objetivo: criar somente a fundação executável do backend.
+
+- Java 21, Spring Boot e Maven;
+- estrutura hexagonal mínima;
+- REST, validação, OpenAPI e Actuator;
+- configuração externa;
+- testes de contexto e arquitetura;
+- MongoDB local preparado por Docker;
+- nenhuma integração com IA nesta fase.
+
+## Fase 2 — núcleo de prompt e memória
+
+- modelar `Prompt`, `NormalizedPrompt`, `PromptHash` e `KnowledgeEntry`;
+- criar os ports `MemoryRepository`, `EmbeddingProvider` e `AiProvider`;
+- implementar normalização conservadora e SHA-256;
+- criar testes unitários das invariantes.
+
+## Fase 3 — persistência e busca exata
+
+- criar representação MongoDB e mapper;
+- criar índices tradicionais;
+- implementar consulta por hash;
+- registrar reutilização;
+- garantir persistência idempotente;
+- validar com testes de integração.
+
+## Fase 4 — prova técnica de embeddings locais
+
+- comparar modelos multilíngues adequados a português e código;
+- medir precisão, memória e latência sem GPU;
+- fixar modelo, versão, dimensão e checksum;
+- implementar o adapter ONNX;
+- impedir download remoto durante uma solicitação.
+
+## Fase 5 — busca semântica
+
+- configurar `mongot` e índice vetorial;
+- implementar `$vectorSearch`;
+- parametrizar top-K e quantidade de candidatos;
+- verificar que o índice esteja pronto;
+- criar dataset de avaliação e testes de integração.
+
+## Fase 6 — classificação e compatibilidade
+
+- implementar `SimilarityScore` e `CompatibilityAssessment`;
+- classificar `FULL`, `PARTIAL` e `NONE`;
+- externalizar e validar thresholds;
+- impedir `FULL` quando houver conflito técnico relevante;
+- calibrar thresholds com exemplos reais.
+
+## Fase 7 — orquestração obrigatória
+
+- implementar `ProcessPromptUseCase` e `PromptOrchestrator`;
+- criar `ResolutionPlan`;
+- testar os fluxos `FULL`, `PARTIAL` e `NONE` com fakes ou mocks;
+- testar que falhas de memória bloqueiam integrações externas;
+- proteger dependências com testes arquiteturais.
+
+## Fase 8 — primeira integração com IA
+
+- escolher e implementar um único adapter de `AiProvider`;
+- configurar modelo, temperatura, limite de tokens e segredo externamente;
+- aplicar sanitização e minimização de contexto;
+- implementar timeouts e tratamento de erros;
+- persistir respostas de modo idempotente.
+
+Pesquisa externa continuará fora do escopo nesta fase.
+
+## Fase 9 — observabilidade
+
+- registrar hits exatos e semânticos;
+- registrar chamadas evitadas e realizadas;
+- capturar tokens informados pelo provider;
+- documentar a estimativa de tokens economizados;
+- medir latência das etapas;
+- evitar conteúdo sensível e labels de alta cardinalidade.
+
+## Fase 10 — extensão VS Code
+
+- criar sidebar ou painel simples;
+- receber o prompt;
+- chamar somente o backend local;
+- apresentar resposta, fonte, similaridade e uso de IA;
+- não executar comandos nem modificar arquivos automaticamente.
+
+## Fase 11 — integração e endurecimento
+
+- realizar testes ponta a ponta;
+- validar cenários de indisponibilidade;
+- revisar limites de payload e sanitização;
+- consolidar documentação operacional;
+- demonstrar métricas de reutilização e economia.
+
+## Evoluções posteriores ao MVP
+
+- pesquisa externa controlada;
+- feedback, promoção e desativação de conhecimento;
+- deduplicação semântica avançada;
+- versionamento e soluções substituídas;
+- análise ampliada do workspace;
+- módulos especializados;
+- integração opcional com APIs do Copilot;
+- geração assistida de testes E2E/Cucumber a partir de referências locais.
