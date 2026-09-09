@@ -1,11 +1,11 @@
 # Java e Maven
 *.class
 *.jar
+!**/.mvn/wrapper/maven-wrapper.jar
 *.war
 *.ear
 target/
 .mvn/timing.properties
-.mvn/wrapper/maven-wrapper.jar
 
 # Node.js e TypeScript
 node_modules/
@@ -67,4 +67,3 @@ logs/
 
 # Sistema operacional
 .DS_Store
-

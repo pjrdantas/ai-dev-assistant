@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: ai-dev-assistant-backend
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27017/?directConnection=true}
+    database: ${MONGODB_DATABASE:ai_dev_assistant}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html

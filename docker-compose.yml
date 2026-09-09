@@ -1,3 +1,16 @@
-# Os serviços serão adicionados na próxima fase.
-services: {}
+services:
+  mongodb:
+    image: mongodb/mongodb-atlas-local:8.3.8-20260904T092811Z
+    container_name: ai-dev-assistant-mongodb
+    hostname: mongodb
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+      - mongodb-config:/data/configdb
+      - mongodb-search:/data/mongot
 
+volumes:
+  mongodb-data:
+  mongodb-config:
+  mongodb-search:

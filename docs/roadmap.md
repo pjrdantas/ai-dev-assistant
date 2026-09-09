@@ -19,6 +19,8 @@ Saída esperada: documentação suficiente para iniciar o backend sem decisões 
 
 ## Fase 1 — backend base
 
+Status: implementação concluída em 2026-09-09. Build, testes, Actuator, OpenAPI e configuração do Compose foram validados. A execução do container MongoDB permanece pendente porque o daemon local do Docker Desktop retornou erro ao iniciar.
+
 Objetivo: criar somente a fundação executável do backend.
 
 - Java 21, Spring Boot e Maven;
