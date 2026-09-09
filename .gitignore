@@ -30,7 +30,9 @@ coverage/
 *.iml
 *.iws
 *.ipr
-out/
+/out/
+/backend/out/
+/vscode-extension/out/
 
 # Eclipse
 .classpath

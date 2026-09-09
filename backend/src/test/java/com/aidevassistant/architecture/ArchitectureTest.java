@@ -21,16 +21,19 @@ class ArchitectureTest {
                         "org.springframework..",
                         "org.mongodb..",
                         "com.mongodb..",
+                        "..application..",
                         "..adapter..")
                 .allowEmptyShould(true)
                 .check(PRODUCTION_CLASSES);
     }
 
     @Test
-    void inboundAdaptersMustNotDependOnOutboundAdapters() {
+    void inboundAdaptersMustNotDependOnOutboundPortsOrAdapters() {
         noClasses()
                 .that().resideInAPackage("..adapter.in..")
-                .should().dependOnClassesThat().resideInAPackage("..adapter.out..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "..application.port.out..",
+                        "..adapter.out..")
                 .allowEmptyShould(true)
                 .check(PRODUCTION_CLASSES);
     }

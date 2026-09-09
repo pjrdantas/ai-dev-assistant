@@ -12,7 +12,7 @@ Assistente de desenvolvimento integrado ao VS Code que consulta uma memória loc
 
 ## Estado atual
 
-A Fase 1 contém somente a fundação executável do backend. Ainda não existem funcionalidades de memória, embeddings, busca semântica ou integração com IA.
+As Fases 1 e 2 contêm a fundação executável do backend e o núcleo de domínio para prompts, normalização, hash e conhecimento reutilizável. Os ports de memória, embedding e IA já estão definidos, mas ainda não possuem adapters. Persistência MongoDB, geração de embeddings, busca semântica e integração com IA ainda não foram implementadas.
 
 ## Requisitos locais
 

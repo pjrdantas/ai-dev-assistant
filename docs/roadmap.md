@@ -33,6 +33,8 @@ Objetivo: criar somente a fundação executável do backend.
 
 ## Fase 2 — núcleo de prompt e memória
 
+Status: concluída em 2026-09-09. Modelos de domínio, normalização conservadora v1, hash SHA-256 e ports externos foram implementados e validados por testes unitários e arquiteturais.
+
 - modelar `Prompt`, `NormalizedPrompt`, `PromptHash` e `KnowledgeEntry`;
 - criar os ports `MemoryRepository`, `EmbeddingProvider` e `AiProvider`;
 - implementar normalização conservadora e SHA-256;
