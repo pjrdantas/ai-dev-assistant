@@ -44,6 +44,8 @@ Configuração fixada:
 
 A variante AVX2 deve ser reavaliada se o backend precisar rodar em hardware sem esse conjunto de instruções. A qualidade também deverá ser comparada novamente com um dataset maior antes de definir thresholds.
 
+Os thresholds iniciais foram posteriormente avaliados na Fase 6. Os resultados e a justificativa estão em `docs/classification-calibration.md`.
+
 ## Reprodução
 
 Na raiz do projeto:

@@ -1,0 +1,14 @@
+expected|query|candidate
+FULL|Qual a melhor forma de testar um controller Spring usando MockMvc?|Como escrever um teste de controller Spring Boot com MockMvc
+FULL|Provision an S3 bucket using Terraform on AWS|How to configure an AWS S3 bucket with Terraform
+FULL|Por que meu consumidor Kafka nao recebe eventos?|Kafka consumer is not receiving messages
+FULL|Como verificar IllegalArgumentException com JUnit?|JUnit exception assertion using assertThrows
+FULL|Escreva um teste BDD de autenticacao usando Cucumber|Como criar um cenario Cucumber para login
+PARTIAL|Como testar um service Spring com JUnit?|Como escrever um teste de controller Spring Boot com MockMvc
+PARTIAL|Provisionar uma fila SQS usando Terraform|How to configure an AWS S3 bucket with Terraform
+PARTIAL|Erro de compilacao em um componente Angular|Como corrigir erro de compilacao em uma classe Java
+PARTIAL|Meu producer Kafka nao publica eventos|Kafka consumer is not receiving messages
+NONE|Erro de compilacao em um componente Angular|How to configure an AWS S3 bucket with Terraform
+NONE|Por que meu consumidor Kafka nao recebe eventos?|Como criar um cenario Cucumber para login
+NONE|NullPointerException ao chamar um repository Java|Subir MongoDB usando Docker Compose
+NONE|Provisionar recursos AWS com Terraform|How to mock a dependency with Mockito

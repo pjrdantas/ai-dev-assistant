@@ -3,6 +3,7 @@ package com.aidevassistant.memory.domain.model;
 import com.aidevassistant.prompt.domain.model.NormalizedPrompt;
 import com.aidevassistant.prompt.domain.model.Prompt;
 import com.aidevassistant.prompt.domain.model.PromptHash;
+import com.aidevassistant.projectcontext.domain.model.TechnicalContext;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -17,6 +18,7 @@ public record KnowledgeEntry(
         String solution,
         KnowledgeStatus status,
         KnowledgeUsage usage,
+        TechnicalContext technicalContext,
         Optional<Embedding> embedding,
         Instant createdAt,
         Instant updatedAt) {
@@ -29,6 +31,7 @@ public record KnowledgeEntry(
         Objects.requireNonNull(solution, "Solution must not be null");
         Objects.requireNonNull(status, "Knowledge status must not be null");
         Objects.requireNonNull(usage, "Knowledge usage must not be null");
+        Objects.requireNonNull(technicalContext, "Technical context must not be null");
         Objects.requireNonNull(embedding, "Embedding must not be null");
         Objects.requireNonNull(createdAt, "Creation date must not be null");
         Objects.requireNonNull(updatedAt, "Update date must not be null");
@@ -62,9 +65,52 @@ public record KnowledgeEntry(
                 solution,
                 KnowledgeStatus.ACTIVE,
                 KnowledgeUsage.unused(),
+                TechnicalContext.empty(),
                 Optional.empty(),
                 createdAt,
                 createdAt);
+    }
+
+    public static KnowledgeEntry create(
+            UUID id,
+            Prompt prompt,
+            NormalizedPrompt normalizedPrompt,
+            PromptHash promptHash,
+            String solution,
+            TechnicalContext technicalContext,
+            Instant createdAt) {
+        return new KnowledgeEntry(
+                id,
+                prompt,
+                normalizedPrompt,
+                promptHash,
+                solution,
+                KnowledgeStatus.ACTIVE,
+                KnowledgeUsage.unused(),
+                technicalContext,
+                Optional.empty(),
+                createdAt,
+                createdAt);
+    }
+
+    public KnowledgeEntry withTechnicalContext(TechnicalContext context, Instant changedAt) {
+        Objects.requireNonNull(context, "Technical context must not be null");
+        Objects.requireNonNull(changedAt, "Technical context change date must not be null");
+        if (changedAt.isBefore(updatedAt)) {
+            throw new IllegalArgumentException("Technical context change date must not precede the last update");
+        }
+        return new KnowledgeEntry(
+                id,
+                prompt,
+                normalizedPrompt,
+                promptHash,
+                solution,
+                status,
+                usage,
+                context,
+                embedding,
+                createdAt,
+                changedAt);
     }
 
     public KnowledgeEntry withEmbedding(Embedding generatedEmbedding, Instant generatedAt) {
@@ -81,6 +127,7 @@ public record KnowledgeEntry(
                 solution,
                 status,
                 usage,
+                technicalContext,
                 Optional.of(generatedEmbedding),
                 createdAt,
                 generatedAt);
@@ -99,6 +146,7 @@ public record KnowledgeEntry(
                 solution,
                 status,
                 usage.registerAt(usedAt),
+                technicalContext,
                 embedding,
                 createdAt,
                 usedAt);

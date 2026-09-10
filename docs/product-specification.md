@@ -104,8 +104,7 @@ Backend preferencial:
 - Java 21;
 - Spring Boot;
 - Maven;
-- MongoDB local;
-- Docker e Docker Compose;
+- persistência local embutida no processo;
 - REST;
 - Swagger/OpenAPI;
 - JUnit 5;
@@ -122,6 +121,8 @@ Princípios obrigatórios:
 - nenhuma regra de negócio em controllers.
 
 O MVP utilizará inicialmente um único módulo Maven, organizado internamente por capacidade funcional e limites hexagonais. A criação de múltiplos módulos Maven dependerá de necessidade concreta.
+
+O produto final deverá funcionar no Windows sem Docker, containers ou um daemon de banco de dados instalado separadamente. A prova técnica MongoDB/mongot já implementada permanece apenas como referência de desenvolvimento e deverá ser substituída por um adapter de memória embutido antes da orquestração final.
 
 ## 7. Capacidades principais
 
@@ -202,7 +203,7 @@ candidatos mais próximos
 
 O embedding deverá ser gerado localmente sempre que tecnicamente viável. O modelo precisa ser versionado, ter dimensão fixa e estar disponível antes do processamento do prompt. O processamento não deverá provocar download remoto implícito do modelo.
 
-Thresholds de classificação devem ser externos e validados. Valores iniciais como `0.90` para FULL e `0.72` para PARTIAL são hipóteses que precisarão de calibração com um conjunto de avaliação.
+Thresholds de classificação devem ser externos e validados. A calibração inicial conservadora definiu `0.90` para FULL e `0.70` para PARTIAL. Esses valores priorizam evitar falsos `FULL` e deverão continuar sendo revistos com a ampliação do conjunto de avaliação.
 
 ## 11. Similaridade e compatibilidade
 
@@ -242,7 +243,7 @@ Caminhos absolutos do workspace não devem ser persistidos por padrão. Deve-se 
 
 ## 13. Memória reutilizável
 
-A collection inicial será semelhante a `ai_memory` e deverá representar conhecimento reutilizável, não histórico infinito de conversa.
+O repositório local deverá representar conhecimento reutilizável, não histórico infinito de conversa.
 
 O conhecimento deverá prever:
 
@@ -316,7 +317,7 @@ Ela deverá funcionar sem GitHub Copilot. Integrações com Copilot, Chat Partic
 
 Configurações externas previstas:
 
-- URL e database do MongoDB;
+- diretório da memória local embutida;
 - threshold de match completo;
 - threshold de match parcial;
 - top-K e quantidade de candidatos da busca vetorial;
@@ -363,7 +364,7 @@ estimatedTokensSaved
 averageSimilarity
 ```
 
-Também deverão ser consideradas latências de normalização, embedding, MongoDB e IA, além de `avoidedAiCalls`.
+Também deverão ser consideradas latências de normalização, embedding, persistência local e IA, além de `avoidedAiCalls`.
 
 Contagens reais e estimativas devem ser apresentadas separadamente. Prompts, caminhos e identificadores de projeto não devem ser usados como labels de alta cardinalidade.
 

@@ -5,6 +5,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 @Document(collection = "ai_memory")
 record KnowledgeDocument(
@@ -19,12 +20,24 @@ record KnowledgeDocument(
         String status,
         long reuseCount,
         Instant lastUsedAt,
+        TechnicalContextDocument technicalContext,
         EmbeddingDocument embedding,
         Instant createdAt,
         Instant updatedAt) {
 
     static final String COLLECTION_NAME = "ai_memory";
-    static final int CURRENT_SCHEMA_VERSION = 2;
+    static final int CURRENT_SCHEMA_VERSION = 3;
+}
+
+record TechnicalContextDocument(
+        List<String> technologies,
+        Map<String, String> versions,
+        String taskType) {
+
+    TechnicalContextDocument {
+        technologies = List.copyOf(technologies);
+        versions = Map.copyOf(versions);
+    }
 }
 
 record EmbeddingDocument(

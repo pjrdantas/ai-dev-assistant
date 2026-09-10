@@ -2,6 +2,8 @@
 
 O desenvolvimento será incremental. Cada fase deverá ser descrita antes de seu início, validada com testes proporcionais ao risco e concluída antes do avanço para a próxima.
 
+Restrição operacional adicionada em 2026-09-10: o produto final deve funcionar sem Docker, containers ou daemon de banco de dados. O MongoDB Atlas Local permanece somente como prova técnica e infraestrutura de testes até sua substituição por persistência embutida.
+
 ## Fase 0 — especificação e decisões arquiteturais
 
 Status: concluída em 2026-09-09.
@@ -73,11 +75,22 @@ Status: concluída em 2026-09-10. O schema da memória passou a persistir embedd
 
 ## Fase 6 — classificação e compatibilidade
 
+Status: concluída em 2026-09-10. Score, thresholds, contexto técnico, compatibilidade e classificação `FULL`, `PARTIAL` e `NONE` foram implementados no domínio. Os limites `0.90` e `0.70` foram calibrados conservadoramente com o modelo ONNX e exemplos representativos.
+
 - implementar `SimilarityScore` e `CompatibilityAssessment`;
 - classificar `FULL`, `PARTIAL` e `NONE`;
 - externalizar e validar thresholds;
 - impedir `FULL` quando houver conflito técnico relevante;
 - calibrar thresholds com exemplos reais.
+
+## Fase 6A — runtime local sem containers
+
+- selecionar e validar uma tecnologia de persistência e busca vetorial embutida em Java;
+- implementar um adapter de `MemoryRepository` sem daemon externo;
+- migrar as garantias de busca exata, deduplicação, reutilização e busca semântica;
+- criar testes que executem sem Docker;
+- retirar MongoDB, mongot e Docker dos requisitos do produto final;
+- validar inicialização e persistência no Windows em diretório local.
 
 ## Fase 7 — orquestração obrigatória
 

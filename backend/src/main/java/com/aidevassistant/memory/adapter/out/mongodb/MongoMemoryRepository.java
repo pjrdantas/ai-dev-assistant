@@ -71,6 +71,7 @@ final class MongoMemoryRepository implements MemoryRepository {
                 .setOnInsert("status", document.status())
                 .setOnInsert("reuseCount", document.reuseCount())
                 .setOnInsert("lastUsedAt", document.lastUsedAt())
+                .setOnInsert("technicalContext", document.technicalContext())
                 .setOnInsert("embedding", document.embedding())
                 .setOnInsert("createdAt", document.createdAt())
                 .setOnInsert("updatedAt", document.updatedAt());

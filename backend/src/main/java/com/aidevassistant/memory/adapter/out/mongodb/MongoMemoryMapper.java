@@ -7,6 +7,7 @@ import com.aidevassistant.memory.domain.model.KnowledgeUsage;
 import com.aidevassistant.prompt.domain.model.NormalizedPrompt;
 import com.aidevassistant.prompt.domain.model.Prompt;
 import com.aidevassistant.prompt.domain.model.PromptHash;
+import com.aidevassistant.projectcontext.domain.model.TechnicalContext;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -29,6 +30,7 @@ final class MongoMemoryMapper {
                 knowledge.status().name(),
                 knowledge.usage().reuseCount(),
                 knowledge.usage().lastUsedAt(),
+                toDocument(knowledge.technicalContext()),
                 knowledge.embedding().map(this::toDocument).orElse(null),
                 knowledge.createdAt(),
                 knowledge.updatedAt());
@@ -43,9 +45,26 @@ final class MongoMemoryMapper {
                 document.solution(),
                 KnowledgeStatus.valueOf(document.status()),
                 new KnowledgeUsage(document.reuseCount(), document.lastUsedAt()),
+                document.technicalContext() == null
+                        ? TechnicalContext.empty()
+                        : toDomain(document.technicalContext()),
                 Optional.ofNullable(document.embedding()).map(this::toDomain),
                 document.createdAt(),
                 document.updatedAt());
+    }
+
+    TechnicalContextDocument toDocument(TechnicalContext context) {
+        return new TechnicalContextDocument(
+                context.technologies().stream().sorted().toList(),
+                context.versions(),
+                context.taskType().orElse(null));
+    }
+
+    TechnicalContext toDomain(TechnicalContextDocument document) {
+        return new TechnicalContext(
+                java.util.Set.copyOf(document.technologies()),
+                document.versions(),
+                Optional.ofNullable(document.taskType()));
     }
 
     EmbeddingDocument toDocument(Embedding embedding) {

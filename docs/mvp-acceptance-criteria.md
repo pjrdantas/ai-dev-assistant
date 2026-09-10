@@ -39,13 +39,14 @@
 - Respostas geradas externamente são persistidas antes de uma conclusão bem-sucedida.
 - Persistência e reprocessamento são idempotentes.
 
-## 6. MongoDB
+## 6. Persistência local
 
 - Conhecimento reutilizável não é tratado como histórico de conversa.
 - O documento contém versão de schema e ciclo de vida.
 - Existem índices para hash, deduplicação e busca vetorial.
 - Reutilização registra quantidade, data, projeto e similaridade mais recentes.
 - O domínio não depende de classes ou anotações MongoDB.
+- O produto final inicia e mantém sua memória sem Docker, containers ou daemon externo.
 
 ## 7. Segurança
 
@@ -77,7 +78,7 @@
 - Testes comprovam que `AiProvider` não é chamado em `FULL`.
 - Testes comprovam que memória indisponível bloqueia integrações externas.
 - Testes arquiteturais verificam a direção das dependências.
-- O ambiente local pode ser iniciado de forma reproduzível.
+- O ambiente final pode ser iniciado de forma reproduzível sem Docker.
 - A documentação operacional corresponde ao comportamento implementado.
 
 ## 11. Fora do aceite do MVP

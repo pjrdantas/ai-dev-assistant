@@ -88,7 +88,7 @@ if (!(Test-Path -LiteralPath $modelPath) -or !(Test-Path -LiteralPath $tokenizer
 Push-Location (Join-Path $projectRoot 'backend')
 try {
     & .\mvnw.cmd -B -ntp `
-        '-Dtest=OnnxEmbeddingBenchmarkTest' `
+        '-Dtest=OnnxEmbeddingBenchmarkTest,SimilarityThresholdCalibrationTest' `
         "-Dembedding.benchmark.directory=$destination" `
         "-Dembedding.benchmark.model-id=$($selected.Repository)" `
         "-Dembedding.benchmark.model-version=$($selected.Revision)" `

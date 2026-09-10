@@ -1,6 +1,6 @@
 # ADR 0005 — Busca vetorial local com MongoDB e mongot
 
-- Status: aceita
+- Status: substituída pela ADR 0011
 - Data: 2026-09-09
 
 ## Contexto
@@ -20,3 +20,6 @@ O backend gerará seus próprios embeddings e executará `$vectorSearch`. Embedd
 - a imagem local será tratada como ambiente de desenvolvimento e testes, não como decisão de produção;
 - o adapter MongoDB esconderá detalhes da busca vetorial do domínio.
 
+## Substituição
+
+Em 2026-09-10 foi informado que o ambiente final é Windows e não permite Docker. Como não existe binário nativo suportado do `mongot` para Windows, esta decisão permanece somente como registro da prova técnica da Fase 5. A ADR 0011 define que o produto final utilizará memória embutida e sem daemon externo.

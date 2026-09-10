@@ -119,6 +119,7 @@ class MongoSemanticSearchIntegrationTest {
                 active.solution(),
                 evaluationCase.status(),
                 active.usage(),
+                active.technicalContext(),
                 active.embedding(),
                 active.createdAt(),
                 active.updatedAt());

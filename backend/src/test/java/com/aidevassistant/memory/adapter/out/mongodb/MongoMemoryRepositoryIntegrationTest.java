@@ -6,6 +6,7 @@ import com.aidevassistant.memory.domain.model.KnowledgeEntry;
 import com.aidevassistant.prompt.domain.model.NormalizedPrompt;
 import com.aidevassistant.prompt.domain.model.Prompt;
 import com.aidevassistant.prompt.domain.model.PromptHash;
+import com.aidevassistant.projectcontext.domain.model.TechnicalContext;
 import com.aidevassistant.test.MongoTestConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,8 @@ import org.springframework.data.mongodb.core.query.Query;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -70,18 +73,25 @@ class MongoMemoryRepositoryIntegrationTest {
 
     @Test
     void persistsEmbeddingAndItsIdentification() {
-        KnowledgeEntry saved = repository.save(knowledge("Vectorized solution", CREATED_AT));
+        TechnicalContext technicalContext = new TechnicalContext(
+                Set.of("java", "spring-boot"),
+                Map.of("java", "21", "spring-boot", "3.5.0"),
+                Optional.of("test"));
+        KnowledgeEntry saved = repository.save(knowledge("Vectorized solution", CREATED_AT)
+                .withTechnicalContext(technicalContext, CREATED_AT.plusSeconds(10)));
         Embedding embedding = new Embedding("test-model", "revision-1", vector(1.0f, 0.0f));
         Instant generatedAt = CREATED_AT.plusSeconds(30);
 
         KnowledgeEntry vectorized = repository.saveEmbedding(saved.id(), embedding, generatedAt).orElseThrow();
 
         assertEquals(embedding, vectorized.embedding().orElseThrow());
+        assertEquals(technicalContext, vectorized.technicalContext());
         assertEquals(generatedAt, vectorized.updatedAt());
         KnowledgeDocument persisted = mongoOperations.findById(saved.id().toString(), KnowledgeDocument.class);
         assertEquals(KnowledgeDocument.CURRENT_SCHEMA_VERSION, persisted.schemaVersion());
         assertEquals("test-model", persisted.embedding().model());
         assertEquals(384, persisted.embedding().dimension());
+        assertEquals("3.5.0", persisted.technicalContext().versions().get("spring-boot"));
     }
 
     @Test

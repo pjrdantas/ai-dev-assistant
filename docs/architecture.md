@@ -54,7 +54,7 @@ Princípios:
                 ▼
 ┌───────────────────────────┐
 │ MemoryRepository          │
-│ MongoDB + mongot          │
+│ adapter local embutido    │
 └───────────────────────────┘
 ```
 
@@ -75,7 +75,7 @@ Fluxos proibidos:
 ```text
 Controller → provider de IA
 VS Code → provider de IA
-Ausência no MongoDB → pesquisa automática na internet
+Ausência na memória local → pesquisa automática na internet
 ```
 
 ## 4. Pacotes planejados
@@ -108,7 +108,8 @@ com.aidevassistant
 │   │   └── service
 │   └── adapter
 │       └── out
-│           ├── mongodb
+│           ├── embedded
+│           ├── mongodb (prova técnica temporária)
 │           └── embedding
 │
 ├── ai
@@ -178,7 +179,8 @@ O `ExternalSearchProvider` será uma extensão planejada, mas não terá impleme
 ## 7. Adapters planejados
 
 - adapter REST para entrada de prompts;
-- adapter MongoDB para memória, busca exata e vetorial;
+- adapter embutido para memória, busca exata e vetorial no produto final;
+- adapter MongoDB mantido temporariamente como prova técnica;
 - adapter ONNX para embeddings locais;
 - adapter para um primeiro provider de IA;
 - adapter Micrometer para métricas;
@@ -216,7 +218,9 @@ A classificação possui duas dimensões independentes:
 1. similaridade semântica;
 2. compatibilidade técnica.
 
-Os thresholds de similaridade serão externos e validados na inicialização. Conflitos de linguagem, framework, versão principal, modelo de embedding ou estado do conhecimento podem limitar a classificação para `PARTIAL` ou `NONE`.
+Os thresholds de similaridade são externos e validados na inicialização. Os valores iniciais calibrados são `0.90` para `FULL` e `0.70` para `PARTIAL`. Somente score na faixa completa e compatibilidade total produz `FULL`.
+
+Contexto incompleto, diferença de versão não principal ou idade acima do limite configurado tornam o candidato adaptável e impedem `FULL`. Estado inativo, conflito de tipo de tarefa, tecnologias sem interseção ou conflito de versão principal tornam o candidato incompatível e resultam em `NONE`.
 
 ## 10. Persistência
 
@@ -242,11 +246,11 @@ A collection inicial será `ai_memory`. O documento de infraestrutura conterá:
 - índice vetorial com filtros de status e modelo;
 - índice auxiliar por data de atualização.
 
-O modelo MongoDB será separado do agregado de domínio por um mapper no adapter.
+Na prova MongoDB, o documento de infraestrutura permanece separado do agregado por um mapper. O mesmo limite deverá ser preservado pelo adapter embutido.
 
 Na implementação inicial, a busca exata retorna todos os candidatos ativos com o mesmo hash e versão de normalização, ordenados pela atualização mais recente. A deduplicação exata combina o hash do prompt com um hash SHA-256 da solução e é protegida por índice único. A gravação idempotente e o incremento de reutilização usam operações atômicas do MongoDB.
 
-Metadados de embedding, aplicabilidade técnica, proveniência e qualidade serão adicionados nas fases correspondentes, sem antecipar estruturas ainda não utilizadas.
+Metadados de embedding e contexto técnico já fazem parte do conhecimento. Proveniência e qualidade serão adicionadas nas fases correspondentes, sem antecipar estruturas ainda não utilizadas.
 
 ## 11. Embedding local
 
@@ -268,17 +272,19 @@ O modelo e o tokenizer são preparados por um script explícito, ficam fora do G
 
 O provider permanece desativado por padrão nesta fase. Quando habilitado por configuração externa, sua inicialização é antecipada pelo Spring e valida a disponibilidade do modelo antes do processamento de prompts.
 
-## 12. MongoDB local e busca vetorial
+## 12. Persistência local e busca vetorial
 
-O ambiente local deverá executar MongoDB junto com `mongot`. Para desenvolvimento e testes será usada uma imagem oficial local com suporte a `$vectorSearch`, fixada em uma versão verificada durante a implementação.
+O produto final deverá executar sem Docker, containers ou serviços de banco de dados instalados separadamente. O `MemoryRepository` continuará como fronteira hexagonal, mas sua implementação final será um adapter embutido no processo, com persistência em diretório local e busca vetorial.
+
+O adapter MongoDB/mongot implementado na Fase 5 é uma prova técnica de desenvolvimento. Ele não será incluído como dependência operacional do produto final porque o `mongot` não possui execução nativa suportada no Windows sem Docker. A tecnologia embutida e a migração serão validadas na Fase 6A antes da orquestração.
 
 O backend fornecerá seus próprios embeddings; não será usado embedding remoto automático do MongoDB.
 
 A aplicação cria o índice vetorial `semantic_vector_idx` quando ele ainda não existe e interrompe a inicialização se o índice não atingir o estado `READY` e `queryable` dentro do prazo configurado. A definição usa similaridade por cosseno sobre `embedding.values` e permite pré-filtros por estado, modelo, versão do modelo e dimensão.
 
-O `MemoryRepository` recebe um `Embedding` e devolve candidatos ordenados com o score bruto fornecido pelo MongoDB. O adapter executa `$vectorSearch`, mantendo nome do índice, `top-K`, quantidade de candidatos e tempos de verificação em configuração externa. A interpretação do score e a classificação `FULL`, `PARTIAL` ou `NONE` pertencem à Fase 6 e não são responsabilidade do adapter.
+O `MemoryRepository` recebe um `Embedding` e devolve candidatos ordenados com score bruto. Na prova MongoDB, o adapter executa `$vectorSearch`, mantendo nome do índice, `top-K`, quantidade de candidatos e tempos de verificação em configuração externa. A interpretação do score e a classificação `FULL`, `PARTIAL` ou `NONE` permanecem no domínio e não são responsabilidade do adapter.
 
-O schema MongoDB v2 adiciona o subdocumento opcional `embedding`. A ausência do campo continua válida para conhecimentos gravados antes da vetorização; uma operação atômica permite anexar posteriormente modelo, versão, dimensão e vetor.
+O schema MongoDB v3 contém os subdocumentos de embedding e contexto técnico. A ausência desses campos continua compatível com conhecimentos anteriores; o formato definitivo será migrado pelo adapter embutido da Fase 6A.
 
 ## 13. Fluxo do PromptOrchestrator
 

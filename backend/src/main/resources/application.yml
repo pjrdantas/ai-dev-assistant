@@ -24,6 +24,10 @@ springdoc:
     path: /swagger-ui.html
 
 memory:
+  classification:
+    full-threshold: ${MEMORY_FULL_THRESHOLD:0.90}
+    partial-threshold: ${MEMORY_PARTIAL_THRESHOLD:0.70}
+    maximum-full-age: ${MEMORY_MAXIMUM_FULL_AGE:180d}
   semantic-search:
     index-name: ${MEMORY_SEMANTIC_INDEX_NAME:semantic_vector_idx}
     dimension: ${MEMORY_SEMANTIC_DIMENSION:384}

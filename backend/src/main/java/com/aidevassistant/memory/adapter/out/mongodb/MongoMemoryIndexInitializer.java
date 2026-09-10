@@ -1,5 +1,6 @@
 package com.aidevassistant.memory.adapter.out.mongodb;
 
+import com.mongodb.MongoException;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.SearchIndexModel;
 import com.mongodb.client.model.SearchIndexType;
@@ -52,19 +53,14 @@ final class MongoMemoryIndexInitializer {
                 .on("updatedAt", Sort.Direction.DESC)
                 .named(UPDATED_AT_INDEX));
 
-        createVectorIndexIfMissing();
-        awaitVectorIndexReadiness();
+        ensureVectorIndexReady();
     }
 
     boolean isVectorIndexReady() {
         return isReady(vectorIndexState());
     }
 
-    private void createVectorIndexIfMissing() {
-        if (vectorIndexState() != null) {
-            return;
-        }
-
+    private void requestVectorIndexCreation() {
         Document definition = new Document("fields", List.of(
                 new Document("type", "vector")
                         .append("path", "embedding.values")
@@ -84,26 +80,39 @@ final class MongoMemoryIndexInitializer {
                 semanticSearchProperties.getIndexName());
     }
 
-    private void awaitVectorIndexReadiness() {
+    private void ensureVectorIndexReady() {
         Instant deadline = Instant.now().plus(semanticSearchProperties.getReadinessTimeout());
         Document lastState = null;
+        MongoException lastTransientFailure = null;
+        boolean creationRequested = false;
 
         while (Instant.now().isBefore(deadline)) {
-            lastState = vectorIndexState();
-            if (lastState != null && "FAILED".equals(lastState.getString("status"))) {
-                throw new IllegalStateException("MongoDB Vector Search index failed: " + lastState);
-            }
-            if (isReady(lastState)) {
-                validateVectorIndexDefinition(lastState);
-                LOGGER.info("MongoDB Vector Search index '{}' is READY",
-                        semanticSearchProperties.getIndexName());
-                return;
+            try {
+                lastState = vectorIndexState();
+                lastTransientFailure = null;
+                if (lastState == null && !creationRequested) {
+                    requestVectorIndexCreation();
+                    creationRequested = true;
+                } else if (lastState != null && "FAILED".equals(lastState.getString("status"))) {
+                    throw new IllegalStateException("MongoDB Vector Search index failed: " + lastState);
+                } else if (isReady(lastState)) {
+                    validateVectorIndexDefinition(lastState);
+                    LOGGER.info("MongoDB Vector Search index '{}' is READY",
+                            semanticSearchProperties.getIndexName());
+                    return;
+                }
+            } catch (MongoException transientFailure) {
+                lastTransientFailure = transientFailure;
+                LOGGER.debug("MongoDB Search management is not ready yet", transientFailure);
             }
             pauseBeforeNextReadinessCheck();
         }
 
-        throw new IllegalStateException(
-                "MongoDB Vector Search index did not become READY before timeout. Last state: " + lastState);
+        String message = "MongoDB Vector Search index did not become READY before timeout. Last state: " + lastState;
+        if (lastTransientFailure != null) {
+            throw new IllegalStateException(message, lastTransientFailure);
+        }
+        throw new IllegalStateException(message);
     }
 
     private Document vectorIndexState() {
