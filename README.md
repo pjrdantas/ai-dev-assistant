@@ -12,7 +12,7 @@ Assistente de desenvolvimento integrado ao VS Code que consulta uma memória loc
 
 ## Estado atual
 
-As Fases 1 a 3 contêm a fundação executável do backend, o núcleo de domínio e a persistência MongoDB da memória. Busca exata, deduplicação idempotente, índices tradicionais e registro de reutilização estão implementados. Geração de embeddings, busca semântica, classificação, orquestração e integração com IA ainda não foram implementadas.
+As Fases 1 a 4 contêm a fundação executável do backend, o núcleo de domínio, a persistência MongoDB da memória e o adapter de embeddings ONNX locais. Busca exata, deduplicação idempotente, índices tradicionais, registro de reutilização e geração local de vetores estão implementados. Busca semântica, classificação, orquestração e integração com IA ainda não foram implementadas.
 
 ## Requisitos locais
 
@@ -20,6 +20,18 @@ As Fases 1 a 3 contêm a fundação executável do backend, o núcleo de domíni
 - Docker com Docker Compose.
 
 O Maven não precisa estar instalado globalmente porque o backend inclui o Maven Wrapper.
+
+## Preparar o modelo de embedding
+
+Na raiz do projeto, baixe explicitamente os artefatos fixados e verifique seus checksums:
+
+```powershell
+.\scripts\embedding-model.ps1 prepare
+```
+
+Os binários ficam em `backend/models` e não são versionados no Git. Para ativar o provider, execute o backend a partir da pasta `backend` com `EMBEDDING_LOCAL_ENABLED=true`. Se os artefatos estiverem ausentes ou divergirem dos checksums esperados, a inicialização falhará sem tentar download automático.
+
+Os resultados e comandos da prova técnica estão em `docs/embedding-benchmark.md`.
 
 ## Executar o ambiente local
 

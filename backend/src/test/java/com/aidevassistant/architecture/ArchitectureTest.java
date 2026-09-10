@@ -37,4 +37,15 @@ class ArchitectureTest {
                 .allowEmptyShould(true)
                 .check(PRODUCTION_CLASSES);
     }
+
+    @Test
+    void localEmbeddingAdapterMustNotDependOnNetworkApis() {
+        noClasses()
+                .that().resideInAPackage("..adapter.out.onnx..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "java.net..",
+                        "java.net.http..")
+                .allowEmptyShould(true)
+                .check(PRODUCTION_CLASSES);
+    }
 }

@@ -260,7 +260,13 @@ O modelo deverá:
 - não ser baixado implicitamente durante uma solicitação;
 - ter seu identificador, versão e dimensão persistidos.
 
-A escolha final será feita após um benchmark pequeno e reproduzível.
+A escolha inicial e as limitações do benchmark estão registradas em `docs/embedding-benchmark.md`.
+
+Para a primeira versão foi selecionado `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, revisão `e8f8c211226b894fcb81acc59f3b34ba3efd5f42`, em ONNX quantizado para AVX2. O adapter produz vetores de 384 dimensões por mean pooling com máscara de atenção e normalização L2.
+
+O modelo e o tokenizer são preparados por um script explícito, ficam fora do Git e têm SHA-256 conferido antes da criação da sessão ONNX. O modo offline do tokenizer é forçado pelo adapter. A ausência ou divergência de qualquer artefato impede a ativação do provider; não existe caminho de download durante `EmbeddingProvider.generate`.
+
+O provider permanece desativado por padrão nesta fase. Quando habilitado por configuração externa, sua inicialização é antecipada pelo Spring e valida a disponibilidade do modelo antes do processamento de prompts.
 
 ## 12. MongoDB local e busca vetorial
 

@@ -22,3 +22,17 @@ springdoc:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
+
+embedding:
+  local:
+    enabled: ${EMBEDDING_LOCAL_ENABLED:false}
+    directory: ${EMBEDDING_MODEL_DIRECTORY:models/paraphrase-multilingual-minilm}
+    model-file: model.onnx
+    tokenizer-file: tokenizer.json
+    model-id: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+    model-version: e8f8c211226b894fcb81acc59f3b34ba3efd5f42
+    dimension: 384
+    max-tokens: 128
+    model-sha256: 98a01d88b7de996cdea58c32ca71208c09968d143798814b2ea09d3439dc334f
+    tokenizer-sha256: 2c3387be76557bd40970cec13153b3bbf80407865484b209e655e5e4729076b8
+    text-prefix: ""

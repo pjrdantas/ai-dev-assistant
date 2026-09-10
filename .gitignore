@@ -67,5 +67,8 @@ logs/
 *.swp
 *.swo
 
+# Modelos locais de embedding (preparados por script e validados por checksum)
+/backend/models/
+
 # Sistema operacional
 .DS_Store

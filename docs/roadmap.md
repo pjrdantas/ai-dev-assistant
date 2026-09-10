@@ -53,6 +53,8 @@ Status: concluída em 2026-09-09. Representação MongoDB, mapper, índices trad
 
 ## Fase 4 — prova técnica de embeddings locais
 
+Status: concluída em 2026-09-09. Dois modelos multilíngues foram comparados em CPU; o MiniLM multilíngue quantizado foi fixado com versão, dimensão e checksums. O adapter ONNX valida os artefatos na inicialização, opera em modo offline e foi validado com um benchmark reproduzível.
+
 - comparar modelos multilíngues adequados a português e código;
 - medir precisão, memória e latência sem GPU;
 - fixar modelo, versão, dimensão e checksum;
