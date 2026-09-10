@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Validar o mecanismo local da Fase 5: persistência dos vetores, prontidão do índice, ordenação por similaridade e pré-filtros aplicados pelo `$vectorSearch`.
+Validar o mecanismo local definitivo da Fase 6A: persistência dos vetores, abertura segura do índice, ordenação por similaridade e filtros aplicados pela consulta k-NN do Lucene.
 
 ## Dataset
 
@@ -10,16 +10,16 @@ O arquivo `backend/src/test/resources/semantic-search-evaluation.csv` contém se
 
 Quatro conhecimentos ativos usam o mesmo modelo e versão da consulta e possuem uma ordem esperada por similaridade. O teste configura `top-K=3`, portanto somente os três primeiros podem ser devolvidos. Outros três casos devem ser excluídos por estado descontinuado, modelo diferente ou versão diferente.
 
-Esse dataset é propositalmente determinístico e testa o adapter MongoDB, não a qualidade linguística do modelo. A qualidade, a latência e o consumo do ONNX selecionado são avaliados separadamente em `docs/embedding-benchmark.md`.
+Esse dataset é propositalmente determinístico e testa o adapter Lucene, não a qualidade linguística do modelo. A qualidade, a latência e o consumo do ONNX selecionado são avaliados separadamente em `docs/embedding-benchmark.md`.
 
 ## Critérios verificados
 
-- o índice existe, está `READY` e pode receber consultas;
+- o índice é criado ou aberto e tem schema e dimensão validados antes das consultas;
 - somente embeddings com 384 dimensões são aceitos;
-- `top-K` e quantidade de candidatos são obtidos da configuração externa;
-- o resultado mantém a ordem de score retornada pelo MongoDB;
+- `top-K` é obtido da configuração externa;
+- o resultado mantém a ordem de score normalizado retornada pelo Lucene;
 - conhecimentos que não atendem aos filtros de estado, modelo, versão e dimensão não participam da busca;
-- o score permanece bruto, sem classificação `FULL`, `PARTIAL` ou `NONE` nesta fase.
+- o score permanece como resultado de recuperação, sem classificação `FULL`, `PARTIAL` ou `NONE` no adapter.
 
 ## Execução
 
@@ -29,4 +29,4 @@ Na pasta `backend`:
 .\mvnw.cmd verify
 ```
 
-Os testes de integração usam a imagem Atlas Local fixada no projeto e exigem Docker disponível.
+Os testes de integração criam um índice Lucene em diretório temporário e não exigem Docker, MongoDB ou outro processo externo.

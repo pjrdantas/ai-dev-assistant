@@ -6,23 +6,21 @@ Assistente de desenvolvimento integrado ao VS Code que consulta uma memória loc
 
 - `backend`: backend em Java 21 com Spring Boot.
 - `vscode-extension`: extensão do VS Code em TypeScript.
-- `docker`: arquivos auxiliares relacionados aos containers.
+- `docker`: diretório reservado da estrutura inicial; o produto não utiliza containers.
 - `docs`: documentação técnica, arquitetura e decisões do projeto.
 - `scripts`: scripts auxiliares de desenvolvimento.
 
 ## Estado atual
 
-As Fases 1 a 6 contêm a fundação do backend, o núcleo de domínio, a prova de persistência MongoDB, embeddings ONNX, busca semântica, compatibilidade técnica e classificação `FULL`, `PARTIAL` e `NONE`.
+As Fases 1 a 6A contêm a fundação do backend, o núcleo de domínio, embeddings ONNX, busca exata e semântica, compatibilidade técnica e classificação `FULL`, `PARTIAL` e `NONE`.
 
-O produto final não dependerá de Docker. O adapter MongoDB/mongot da Fase 5 permanece apenas como prova técnica; a Fase 6A substituirá esse caminho por persistência e busca vetorial embutidas antes da orquestração.
+A memória final usa Apache Lucene embutido no processo Java. MongoDB, mongot, Testcontainers e Docker foram removidos do backend e não são necessários para executar ou testar o produto.
 
 ## Requisitos locais
 
 - Java 21.
 
 O Maven não precisa estar instalado globalmente porque o backend inclui o Maven Wrapper.
-
-Docker é usado temporariamente por testes legados do adapter MongoDB, mas não é requisito nem componente permitido no runtime final.
 
 ## Preparar o modelo de embedding
 
@@ -36,18 +34,15 @@ Os binários ficam em `backend/models` e não são versionados no Git. Para ativ
 
 Os resultados e comandos da prova técnica estão em `docs/embedding-benchmark.md`.
 
-## Busca semântica — prova MongoDB de desenvolvimento
+## Memória local e busca semântica
 
-Na inicialização, o backend cria o índice vetorial quando necessário e aguarda seu estado `READY`. A execução é interrompida se o índice não ficar consultável dentro do prazo configurado.
+Na inicialização, o backend cria ou abre um índice Lucene no diretório configurado. O schema e a dimensão vetorial são validados antes de o repositório ficar disponível.
 
 Parâmetros externos disponíveis:
 
-- `MEMORY_SEMANTIC_INDEX_NAME` (padrão `semantic_vector_idx`);
-- `MEMORY_SEMANTIC_DIMENSION` (padrão `384`);
-- `MEMORY_SEMANTIC_TOP_K` (padrão `5`);
-- `MEMORY_SEMANTIC_NUM_CANDIDATES` (padrão `100`);
-- `MEMORY_SEMANTIC_INDEX_TIMEOUT` (padrão `90s`);
-- `MEMORY_SEMANTIC_INDEX_POLL_INTERVAL` (padrão `250ms`).
+- `AI_DEV_ASSISTANT_MEMORY_DIRECTORY` (padrão `%USERPROFILE%\.ai-dev-assistant\memory` no Windows);
+- `MEMORY_VECTOR_DIMENSION` (padrão `384`);
+- `MEMORY_SEMANTIC_TOP_K` (padrão `5`).
 
 O dataset e os limites desta validação estão descritos em `docs/semantic-search-evaluation.md`.
 
@@ -61,17 +56,9 @@ Parâmetros externos iniciais:
 
 A calibração e suas limitações estão documentadas em `docs/classification-calibration.md`.
 
-## Executar a prova MongoDB de desenvolvimento
+## Executar o backend
 
-Os comandos abaixo existem apenas enquanto o adapter embutido da Fase 6A não foi concluído. Eles não representam o modo de execução do produto final.
-
-Na raiz do projeto, inicie o MongoDB local:
-
-```powershell
-docker compose up -d mongodb
-```
-
-Em outro terminal, inicie o backend:
+Na raiz do projeto:
 
 ```powershell
 cd backend
@@ -86,7 +73,7 @@ Endpoints operacionais:
 
 ## Testes do backend
 
-Os testes unitários de domínio não exigem Docker. A suíte completa ainda inclui temporariamente os testes de integração da prova MongoDB e, por isso, exige Docker até a conclusão da Fase 6A.
+Toda a suíte executa com Java e Maven, sem Docker ou serviço de banco de dados externo.
 
 ```powershell
 cd backend

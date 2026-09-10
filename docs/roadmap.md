@@ -2,7 +2,7 @@
 
 O desenvolvimento será incremental. Cada fase deverá ser descrita antes de seu início, validada com testes proporcionais ao risco e concluída antes do avanço para a próxima.
 
-Restrição operacional adicionada em 2026-09-10: o produto final deve funcionar sem Docker, containers ou daemon de banco de dados. O MongoDB Atlas Local permanece somente como prova técnica e infraestrutura de testes até sua substituição por persistência embutida.
+Restrição operacional adicionada em 2026-09-10: o produto final deve funcionar sem Docker, containers ou daemon de banco de dados. A prova MongoDB Atlas Local foi substituída na Fase 6A por persistência Apache Lucene embutida.
 
 ## Fase 0 — especificação e decisões arquiteturais
 
@@ -84,6 +84,8 @@ Status: concluída em 2026-09-10. Score, thresholds, contexto técnico, compatib
 - calibrar thresholds com exemplos reais.
 
 ## Fase 6A — runtime local sem containers
+
+Status: concluída em 2026-09-10. Apache Lucene 10.5.1 foi adotado como adapter embutido de `MemoryRepository`; MongoDB, mongot e Testcontainers foram removidos do backend. Busca exata, deduplicação, reutilização, busca vetorial e persistência após reinicialização foram validadas no Windows sem Docker.
 
 - selecionar e validar uma tecnologia de persistência e busca vetorial embutida em Java;
 - implementar um adapter de `MemoryRepository` sem daemon externo;

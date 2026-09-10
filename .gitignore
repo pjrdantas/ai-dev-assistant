@@ -70,5 +70,9 @@ logs/
 # Modelos locais de embedding (preparados por script e validados por checksum)
 /backend/models/
 
+# Memória local quando configurada dentro do workspace
+/.ai-dev-assistant/
+/backend/.ai-dev-assistant/
+
 # Sistema operacional
 .DS_Store

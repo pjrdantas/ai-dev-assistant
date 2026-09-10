@@ -21,6 +21,7 @@ class ArchitectureTest {
                         "org.springframework..",
                         "org.mongodb..",
                         "com.mongodb..",
+                        "org.apache.lucene..",
                         "..application..",
                         "..adapter..")
                 .allowEmptyShould(true)
@@ -46,6 +47,16 @@ class ArchitectureTest {
                         "java.net..",
                         "java.net.http..")
                 .allowEmptyShould(true)
+                .check(PRODUCTION_CLASSES);
+    }
+
+    @Test
+    void embeddedMemoryAdapterMustNotDependOnNetworkApis() {
+        noClasses()
+                .that().resideInAPackage("..adapter.out.embedded..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "java.net..",
+                        "java.net.http..")
                 .check(PRODUCTION_CLASSES);
     }
 }

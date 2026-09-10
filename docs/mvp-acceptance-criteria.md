@@ -21,7 +21,7 @@
 - Nenhum download remoto de modelo ocorre durante uma solicitação.
 - Modelo, versão e dimensão do embedding são persistidos.
 - A busca vetorial utiliza somente vetores compatíveis.
-- Thresholds, top-K e quantidade de candidatos são configuráveis e validados.
+- Thresholds e top-K são configuráveis e validados.
 - O índice vetorial precisa estar pronto antes da busca.
 
 ## 4. Classificação

@@ -7,7 +7,7 @@
 
 A principal regra do produto determina que nenhuma IA ou pesquisa externa seja acionada antes da consulta à memória local.
 
-Um fallback automático para IA quando MongoDB, o índice vetorial ou o embedding local estiverem indisponíveis violaria essa regra.
+Um fallback automático para IA quando a memória embutida, o índice vetorial ou o embedding local estiverem indisponíveis violaria essa regra.
 
 ## Decisão
 
@@ -21,4 +21,3 @@ Se a consulta obrigatória não puder ser concluída, a operação falhará de f
 - indisponibilidade da memória pode tornar temporariamente o assistente indisponível;
 - health checks, métricas e mensagens de erro serão necessários;
 - testes deverão provar a ausência de interações externas em falhas locais.
-

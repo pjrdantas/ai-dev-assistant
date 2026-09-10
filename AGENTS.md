@@ -11,7 +11,8 @@
 - Evitar classes com nomes artificiais que não representem um domínio ou uma responsabilidade real.
 - Antes de grandes alterações, analisar o impacto no projeto.
 - O produto final deve funcionar no Windows sem Docker, containers ou daemon de banco de dados instalado separadamente.
-- Não introduzir novas dependências operacionais de Docker; a infraestrutura MongoDB atual é somente uma prova técnica temporária de desenvolvimento.
+- Não introduzir dependências operacionais de Docker, MongoDB ou outro daemon externo.
+- A memória local usa Apache Lucene embutido; qualquer troca dessa tecnologia exige justificativa e ADR.
 - Antes de iniciar qualquer atividade, descrever de forma objetiva o que será desenvolvido ou alterado.
 - Antes de planejar ou implementar funcionalidades, consultar `docs/product-specification.md`, `docs/architecture.md`, `docs/roadmap.md` e os ADRs aplicáveis em `docs/decisions`.
 

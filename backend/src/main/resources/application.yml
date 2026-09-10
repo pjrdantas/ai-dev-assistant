@@ -1,9 +1,6 @@
 spring:
   application:
     name: ai-dev-assistant-backend
-  mongodb:
-    uri: ${MONGODB_URI:mongodb://localhost:27017/?directConnection=true}
-    database: ${MONGODB_DATABASE:ai_dev_assistant}
 
 server:
   port: ${SERVER_PORT:8080}
@@ -28,13 +25,10 @@ memory:
     full-threshold: ${MEMORY_FULL_THRESHOLD:0.90}
     partial-threshold: ${MEMORY_PARTIAL_THRESHOLD:0.70}
     maximum-full-age: ${MEMORY_MAXIMUM_FULL_AGE:180d}
-  semantic-search:
-    index-name: ${MEMORY_SEMANTIC_INDEX_NAME:semantic_vector_idx}
-    dimension: ${MEMORY_SEMANTIC_DIMENSION:384}
+  local:
+    directory: ${AI_DEV_ASSISTANT_MEMORY_DIRECTORY:${user.home}/.ai-dev-assistant/memory}
+    dimension: ${MEMORY_VECTOR_DIMENSION:384}
     top-k: ${MEMORY_SEMANTIC_TOP_K:5}
-    num-candidates: ${MEMORY_SEMANTIC_NUM_CANDIDATES:100}
-    readiness-timeout: ${MEMORY_SEMANTIC_INDEX_TIMEOUT:90s}
-    readiness-poll-interval: ${MEMORY_SEMANTIC_INDEX_POLL_INTERVAL:250ms}
 
 embedding:
   local:

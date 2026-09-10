@@ -1,6 +1,6 @@
 # ADR 0011 — Runtime local sem containers
 
-- Status: aceita
+- Status: aceita e implementada na Fase 6A
 - Data: 2026-09-10
 - Substitui: ADR 0005 para o produto final
 
@@ -14,14 +14,14 @@ Manter essa topologia no produto impediria seu funcionamento no ambiente real e 
 
 O produto final deverá executar no Windows sem Docker, containers ou daemon de banco de dados instalado separadamente.
 
-A memória será fornecida por um adapter embutido no processo Java, atrás do port `MemoryRepository`, com dados persistidos em diretório local configurável. A tecnologia será selecionada por uma prova focada na Fase 6A e deverá oferecer busca exata, atualização segura, deduplicação e busca vetorial local.
+A memória será fornecida por um adapter Apache Lucene embutido no processo Java, atrás do port `MemoryRepository`, com dados persistidos em diretório local configurável. A ADR 0013 registra os detalhes da seleção e da implementação.
 
-O adapter MongoDB/mongot e o Docker Compose poderão permanecer temporariamente como infraestrutura de desenvolvimento e comparação, mas não serão empacotados nem documentados como requisito de execução do produto final.
+O adapter MongoDB/mongot e Testcontainers foram removidos do backend na Fase 6A. O `docker-compose.yml` permanece sem serviços apenas para preservar a estrutura inicial do repositório.
 
 ## Consequências
 
 - a arquitetura hexagonal permite trocar a infraestrutura sem alterar classificação e orquestração;
 - a Fase 6 pode prosseguir por ser independente do mecanismo de persistência;
-- antes da Fase 7 será implementado e validado o adapter embutido;
+- o adapter embutido foi implementado e validado antes da Fase 7;
 - os testes de aceite do produto final deverão executar sem Docker;
-- MongoDB e Testcontainers deverão ser retirados do caminho de distribuição final.
+- MongoDB e Testcontainers não fazem parte do build, dos testes ou da distribuição final.

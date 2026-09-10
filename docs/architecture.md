@@ -109,7 +109,6 @@ com.aidevassistant
 │   └── adapter
 │       └── out
 │           ├── embedded
-│           ├── mongodb (prova técnica temporária)
 │           └── embedding
 │
 ├── ai
@@ -180,7 +179,6 @@ O `ExternalSearchProvider` será uma extensão planejada, mas não terá impleme
 
 - adapter REST para entrada de prompts;
 - adapter embutido para memória, busca exata e vetorial no produto final;
-- adapter MongoDB mantido temporariamente como prova técnica;
 - adapter ONNX para embeddings locais;
 - adapter para um primeiro provider de IA;
 - adapter Micrometer para métricas;
@@ -224,7 +222,7 @@ Contexto incompleto, diferença de versão não principal ou idade acima do limi
 
 ## 10. Persistência
 
-A collection inicial será `ai_memory`. O documento de infraestrutura conterá:
+O índice local Lucene representa cada `KnowledgeEntry` como um documento de infraestrutura contendo:
 
 - prompt original, normalizado, versão e hash;
 - chave de deduplicação;
@@ -239,16 +237,16 @@ A collection inicial será `ai_memory`. O documento de infraestrutura conterá:
 - estatísticas de reutilização;
 - datas e versão do schema.
 
-Índices iniciais:
+Campos indexados:
 
-- índice tradicional por hash e status;
-- índice único de deduplicação;
-- índice vetorial com filtros de status e modelo;
-- índice auxiliar por data de atualização.
+- identificador e chave de deduplicação;
+- hash, versão de normalização e estado;
+- modelo, versão e dimensão do embedding;
+- vetor de 384 dimensões para busca por cosseno.
 
-Na prova MongoDB, o documento de infraestrutura permanece separado do agregado por um mapper. O mesmo limite deverá ser preservado pelo adapter embutido.
+O documento Lucene permanece separado do agregado por um mapper. Strings extensas e metadados usados para reconstrução são armazenados como campos persistidos, enquanto campos de filtro usam termos exatos.
 
-Na implementação inicial, a busca exata retorna todos os candidatos ativos com o mesmo hash e versão de normalização, ordenados pela atualização mais recente. A deduplicação exata combina o hash do prompt com um hash SHA-256 da solução e é protegida por índice único. A gravação idempotente e o incremento de reutilização usam operações atômicas do MongoDB.
+Na implementação inicial, a busca exata retorna todos os candidatos ativos com o mesmo hash e versão de normalização, ordenados pela atualização mais recente. A deduplicação combina o hash do prompt com um hash SHA-256 da solução. Um lock único de mutação em conjunto com o `IndexWriter` evita duplicações concorrentes dentro do processo, e o lock nativo do diretório impede dois writers sobre o mesmo índice. Gravações, embeddings e incrementos de reutilização são confirmados com `commit` antes de um refresh bloqueante do reader.
 
 Metadados de embedding e contexto técnico já fazem parte do conhecimento. Proveniência e qualidade serão adicionadas nas fases correspondentes, sem antecipar estruturas ainda não utilizadas.
 
@@ -274,17 +272,15 @@ O provider permanece desativado por padrão nesta fase. Quando habilitado por co
 
 ## 12. Persistência local e busca vetorial
 
-O produto final deverá executar sem Docker, containers ou serviços de banco de dados instalados separadamente. O `MemoryRepository` continuará como fronteira hexagonal, mas sua implementação final será um adapter embutido no processo, com persistência em diretório local e busca vetorial.
+O produto final executa sem Docker, containers ou serviços de banco de dados instalados separadamente. O `MemoryRepository` é implementado por um adapter Apache Lucene 10.5.1 embutido no processo Java e persiste o índice em um diretório local configurável.
 
-O adapter MongoDB/mongot implementado na Fase 5 é uma prova técnica de desenvolvimento. Ele não será incluído como dependência operacional do produto final porque o `mongot` não possui execução nativa suportada no Windows sem Docker. A tecnologia embutida e a migração serão validadas na Fase 6A antes da orquestração.
+O backend fornece seus próprios embeddings. `KnnFloatVectorField` e `KnnFloatVectorQuery` executam a busca de vizinhos por cosseno, com filtros prévios por estado, modelo, versão e dimensão. O score positivo normalizado retornado pelo Lucene permanece apenas como dado de recuperação; a interpretação `FULL`, `PARTIAL` ou `NONE` continua no domínio.
 
-O backend fornecerá seus próprios embeddings; não será usado embedding remoto automático do MongoDB.
+O índice usa `FSDirectory`, um único `IndexWriter` e `SearcherManager`. Cada mutação realiza commit durável e refresh antes de retornar. O diretório é criado automaticamente; índices existentes precisam declarar o schema local v1 e a mesma dimensão configurada, caso contrário a inicialização falha de forma controlada.
 
-A aplicação cria o índice vetorial `semantic_vector_idx` quando ele ainda não existe e interrompe a inicialização se o índice não atingir o estado `READY` e `queryable` dentro do prazo configurado. A definição usa similaridade por cosseno sobre `embedding.values` e permite pré-filtros por estado, modelo, versão do modelo e dimensão.
+O adapter MongoDB/mongot da Fase 5 e seus testes Testcontainers foram removidos do backend. Como aquele armazenamento continha somente dados de prova e teste, não existe migração automática de documentos MongoDB; uma migração de formato futuro deverá ser explícita e versionada.
 
-O `MemoryRepository` recebe um `Embedding` e devolve candidatos ordenados com score bruto. Na prova MongoDB, o adapter executa `$vectorSearch`, mantendo nome do índice, `top-K`, quantidade de candidatos e tempos de verificação em configuração externa. A interpretação do score e a classificação `FULL`, `PARTIAL` ou `NONE` permanecem no domínio e não são responsabilidade do adapter.
-
-O schema MongoDB v3 contém os subdocumentos de embedding e contexto técnico. A ausência desses campos continua compatível com conhecimentos anteriores; o formato definitivo será migrado pelo adapter embutido da Fase 6A.
+O diretório, a dimensão e o `top-K` são externos. A troca de versão principal do Lucene, schema ou dimensão exige uma estratégia explícita de migração ou reindexação.
 
 ## 13. Fluxo do PromptOrchestrator
 

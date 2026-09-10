@@ -104,7 +104,7 @@ Backend preferencial:
 - Java 21;
 - Spring Boot;
 - Maven;
-- persistência local embutida no processo;
+- persistência local Apache Lucene 10.5.1 embutida no processo;
 - REST;
 - Swagger/OpenAPI;
 - JUnit 5;
@@ -122,7 +122,7 @@ Princípios obrigatórios:
 
 O MVP utilizará inicialmente um único módulo Maven, organizado internamente por capacidade funcional e limites hexagonais. A criação de múltiplos módulos Maven dependerá de necessidade concreta.
 
-O produto final deverá funcionar no Windows sem Docker, containers ou um daemon de banco de dados instalado separadamente. A prova técnica MongoDB/mongot já implementada permanece apenas como referência de desenvolvimento e deverá ser substituída por um adapter de memória embutido antes da orquestração final.
+O produto final deverá funcionar no Windows sem Docker, containers ou um daemon de banco de dados instalado separadamente. A prova técnica MongoDB/mongot foi substituída na Fase 6A pelo adapter Apache Lucene embutido antes da orquestração final.
 
 ## 7. Capacidades principais
 
@@ -320,7 +320,7 @@ Configurações externas previstas:
 - diretório da memória local embutida;
 - threshold de match completo;
 - threshold de match parcial;
-- top-K e quantidade de candidatos da busca vetorial;
+- top-K da busca vetorial;
 - provider, modelo, temperatura e limite de tokens da IA;
 - API key;
 - provider e modelo de embedding;

@@ -1,12 +1,15 @@
 package com.aidevassistant;
 
-import com.aidevassistant.test.MongoTestConfiguration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Import;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.nio.file.Path;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -14,8 +17,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(MongoTestConfiguration.class)
 class AiDevAssistantApplicationTest {
+
+    @TempDir
+    static Path memoryDirectory;
+
+    @DynamicPropertySource
+    static void configureLocalMemory(DynamicPropertyRegistry registry) {
+        registry.add("memory.local.directory", memoryDirectory::toString);
+    }
 
     private final MockMvc mockMvc;
 

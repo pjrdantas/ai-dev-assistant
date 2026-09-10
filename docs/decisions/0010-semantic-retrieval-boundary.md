@@ -1,6 +1,6 @@
 # ADR 0010 — Recuperação semântica separada da classificação
 
-- Status: aceita
+- Status: aceita quanto à separação; infraestrutura substituída pela ADR 0013
 - Data: 2026-09-10
 
 ## Contexto
@@ -22,3 +22,7 @@ O índice vetorial é criado pela aplicação quando estiver ausente. A iniciali
 - o domínio não depende de BSON, `$vectorSearch` ou APIs do driver;
 - registros antigos podem continuar sem embedding e ser vetorizados posteriormente;
 - nenhum candidato é classificado como `FULL`, `PARTIAL` ou `NONE` nesta fase.
+
+## Substituição da infraestrutura
+
+Na Fase 6A, a fronteira de recuperação definida por esta ADR foi preservada, mas MongoDB e seu índice assíncrono foram substituídos pelo adapter Apache Lucene descrito na ADR 0013. A classificação continua fora do repositório.
