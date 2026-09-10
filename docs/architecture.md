@@ -244,6 +244,10 @@ A collection inicial será `ai_memory`. O documento de infraestrutura conterá:
 
 O modelo MongoDB será separado do agregado de domínio por um mapper no adapter.
 
+Na implementação inicial, a busca exata retorna todos os candidatos ativos com o mesmo hash e versão de normalização, ordenados pela atualização mais recente. A deduplicação exata combina o hash do prompt com um hash SHA-256 da solução e é protegida por índice único. A gravação idempotente e o incremento de reutilização usam operações atômicas do MongoDB.
+
+Metadados de embedding, aplicabilidade técnica, proveniência e qualidade serão adicionados nas fases correspondentes, sem antecipar estruturas ainda não utilizadas.
+
 ## 11. Embedding local
 
 O `EmbeddingProvider` será implementado inicialmente por um adapter ONNX executado localmente no backend.

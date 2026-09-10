@@ -8,6 +8,7 @@ import com.aidevassistant.prompt.domain.model.Prompt;
 import com.aidevassistant.prompt.domain.model.PromptHash;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -17,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class MemoryDomainTest {
 
     private static final String VALID_HASH = "a".repeat(64);
+    private static final Instant CREATED_AT = Instant.parse("2026-09-09T12:00:00Z");
 
     @Test
     void createsActiveReusableKnowledge() {
@@ -35,6 +37,21 @@ class MemoryDomainTest {
     void knowledgeRejectsBlankSolution() {
         assertThrows(IllegalArgumentException.class,
                 () -> knowledgeEntry(new PromptHash(VALID_HASH, 1), "  "));
+    }
+
+    @Test
+    void knowledgeRegistersReuseWithoutMutatingOriginalEntry() {
+        KnowledgeEntry original = knowledgeEntry(
+                new PromptHash(VALID_HASH, 1),
+                "Use a focused unit test.");
+        Instant usedAt = CREATED_AT.plusSeconds(60);
+
+        KnowledgeEntry reused = original.registerReuse(usedAt);
+
+        assertEquals(0, original.usage().reuseCount());
+        assertEquals(1, reused.usage().reuseCount());
+        assertEquals(usedAt, reused.usage().lastUsedAt());
+        assertEquals(usedAt, reused.updatedAt());
     }
 
     @Test
@@ -60,12 +77,12 @@ class MemoryDomainTest {
 
     private KnowledgeEntry knowledgeEntry(PromptHash hash, String solution) {
         Prompt prompt = new Prompt("How do I test this?");
-        return new KnowledgeEntry(
+        return KnowledgeEntry.create(
                 UUID.randomUUID(),
                 prompt,
                 new NormalizedPrompt(prompt.value(), 1),
                 hash,
                 solution,
-                KnowledgeStatus.ACTIVE);
+                CREATED_AT);
     }
 }

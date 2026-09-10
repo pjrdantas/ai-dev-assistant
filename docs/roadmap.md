@@ -42,6 +42,8 @@ Status: concluída em 2026-09-09. Modelos de domínio, normalização conservado
 
 ## Fase 3 — persistência e busca exata
 
+Status: concluída em 2026-09-09. Representação MongoDB, mapper, índices tradicionais, busca exata, deduplicação idempotente e registro atômico de reutilização foram validados com Testcontainers.
+
 - criar representação MongoDB e mapper;
 - criar índices tradicionais;
 - implementar consulta por hash;

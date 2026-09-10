@@ -12,7 +12,7 @@ Assistente de desenvolvimento integrado ao VS Code que consulta uma memória loc
 
 ## Estado atual
 
-As Fases 1 e 2 contêm a fundação executável do backend e o núcleo de domínio para prompts, normalização, hash e conhecimento reutilizável. Os ports de memória, embedding e IA já estão definidos, mas ainda não possuem adapters. Persistência MongoDB, geração de embeddings, busca semântica e integração com IA ainda não foram implementadas.
+As Fases 1 a 3 contêm a fundação executável do backend, o núcleo de domínio e a persistência MongoDB da memória. Busca exata, deduplicação idempotente, índices tradicionais e registro de reutilização estão implementados. Geração de embeddings, busca semântica, classificação, orquestração e integração com IA ainda não foram implementadas.
 
 ## Requisitos locais
 
@@ -43,6 +43,8 @@ Endpoints operacionais:
 - Swagger UI: `http://localhost:8080/swagger-ui.html`.
 
 ## Testes do backend
+
+Os testes de integração iniciam um MongoDB Atlas Local temporário e exigem que o Docker esteja disponível.
 
 ```powershell
 cd backend

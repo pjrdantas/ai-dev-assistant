@@ -1,21 +1,20 @@
 package com.aidevassistant;
 
+import com.aidevassistant.test.MongoTestConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(properties = {
-        "spring.autoconfigure.exclude="
-                + "org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration,"
-                + "org.springframework.boot.data.mongodb.autoconfigure.DataMongoAutoConfiguration"
-})
+@SpringBootTest
 @AutoConfigureMockMvc
+@Import(MongoTestConfiguration.class)
 class AiDevAssistantApplicationTest {
 
     private final MockMvc mockMvc;
