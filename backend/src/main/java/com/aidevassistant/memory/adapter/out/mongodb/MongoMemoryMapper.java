@@ -1,5 +1,6 @@
 package com.aidevassistant.memory.adapter.out.mongodb;
 
+import com.aidevassistant.memory.domain.model.Embedding;
 import com.aidevassistant.memory.domain.model.KnowledgeEntry;
 import com.aidevassistant.memory.domain.model.KnowledgeStatus;
 import com.aidevassistant.memory.domain.model.KnowledgeUsage;
@@ -11,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Optional;
 
 final class MongoMemoryMapper {
 
@@ -27,6 +29,7 @@ final class MongoMemoryMapper {
                 knowledge.status().name(),
                 knowledge.usage().reuseCount(),
                 knowledge.usage().lastUsedAt(),
+                knowledge.embedding().map(this::toDocument).orElse(null),
                 knowledge.createdAt(),
                 knowledge.updatedAt());
     }
@@ -40,8 +43,33 @@ final class MongoMemoryMapper {
                 document.solution(),
                 KnowledgeStatus.valueOf(document.status()),
                 new KnowledgeUsage(document.reuseCount(), document.lastUsedAt()),
+                Optional.ofNullable(document.embedding()).map(this::toDomain),
                 document.createdAt(),
                 document.updatedAt());
+    }
+
+    EmbeddingDocument toDocument(Embedding embedding) {
+        float[] values = embedding.values();
+        java.util.List<Double> persistedValues = new java.util.ArrayList<>(values.length);
+        for (float value : values) {
+            persistedValues.add((double) value);
+        }
+        return new EmbeddingDocument(
+                embedding.model(),
+                embedding.modelVersion(),
+                embedding.dimension(),
+                persistedValues);
+    }
+
+    Embedding toDomain(EmbeddingDocument document) {
+        float[] values = new float[document.values().size()];
+        for (int index = 0; index < values.length; index++) {
+            values[index] = document.values().get(index).floatValue();
+        }
+        if (document.dimension() != values.length) {
+            throw new IllegalStateException("Persisted embedding dimension does not match its vector");
+        }
+        return new Embedding(document.model(), document.modelVersion(), values);
     }
 
     private String deduplicationKey(KnowledgeEntry knowledge) {

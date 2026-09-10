@@ -4,6 +4,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
+import java.util.List;
 
 @Document(collection = "ai_memory")
 record KnowledgeDocument(
@@ -18,8 +19,21 @@ record KnowledgeDocument(
         String status,
         long reuseCount,
         Instant lastUsedAt,
+        EmbeddingDocument embedding,
         Instant createdAt,
         Instant updatedAt) {
 
-    static final int CURRENT_SCHEMA_VERSION = 1;
+    static final String COLLECTION_NAME = "ai_memory";
+    static final int CURRENT_SCHEMA_VERSION = 2;
+}
+
+record EmbeddingDocument(
+        String model,
+        String modelVersion,
+        int dimension,
+        List<Double> values) {
+
+    EmbeddingDocument {
+        values = List.copyOf(values);
+    }
 }

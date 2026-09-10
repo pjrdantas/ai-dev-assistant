@@ -63,6 +63,8 @@ Status: concluída em 2026-09-09. Dois modelos multilíngues foram comparados em
 
 ## Fase 5 — busca semântica
 
+Status: concluída em 2026-09-10. O schema da memória passou a persistir embeddings identificados; o índice vetorial é criado e validado como `READY`; a consulta `$vectorSearch` aplica filtros de ciclo de vida e modelo e foi validada com dataset determinístico no MongoDB Atlas Local.
+
 - configurar `mongot` e índice vetorial;
 - implementar `$vectorSearch`;
 - parametrizar top-K e quantidade de candidatos;

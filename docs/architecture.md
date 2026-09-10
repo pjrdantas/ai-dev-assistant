@@ -274,7 +274,11 @@ O ambiente local deverá executar MongoDB junto com `mongot`. Para desenvolvimen
 
 O backend fornecerá seus próprios embeddings; não será usado embedding remoto automático do MongoDB.
 
-A aplicação deverá verificar se o índice vetorial está pronto antes de aceitar consultas semânticas.
+A aplicação cria o índice vetorial `semantic_vector_idx` quando ele ainda não existe e interrompe a inicialização se o índice não atingir o estado `READY` e `queryable` dentro do prazo configurado. A definição usa similaridade por cosseno sobre `embedding.values` e permite pré-filtros por estado, modelo, versão do modelo e dimensão.
+
+O `MemoryRepository` recebe um `Embedding` e devolve candidatos ordenados com o score bruto fornecido pelo MongoDB. O adapter executa `$vectorSearch`, mantendo nome do índice, `top-K`, quantidade de candidatos e tempos de verificação em configuração externa. A interpretação do score e a classificação `FULL`, `PARTIAL` ou `NONE` pertencem à Fase 6 e não são responsabilidade do adapter.
+
+O schema MongoDB v2 adiciona o subdocumento opcional `embedding`. A ausência do campo continua válida para conhecimentos gravados antes da vetorização; uma operação atômica permite anexar posteriormente modelo, versão, dimensão e vetor.
 
 ## 13. Fluxo do PromptOrchestrator
 

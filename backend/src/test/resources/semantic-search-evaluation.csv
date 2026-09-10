@@ -1,0 +1,8 @@
+id,prompt,solution,vector,status,model,modelVersion,expectedRank
+java-streams,Como processar uma lista com streams Java,Use map e collect no stream,1.0;0.0,ACTIVE,phase5-model,revision-1,1
+junit-tests,Como testar um service Java com JUnit,Crie um teste unitario focado,0.8;0.6,ACTIVE,phase5-model,revision-1,2
+mongodb-index,Como criar um indice no MongoDB,Crie o indice para o campo consultado,0.0;1.0,ACTIVE,phase5-model,revision-1,3
+legacy-build,Como executar um build legado,Use o procedimento documentado,-1.0;0.0,ACTIVE,phase5-model,revision-1,4
+deprecated-java,Como processar streams Java,Use uma solucao descontinuada,0.99;0.1,DEPRECATED,phase5-model,revision-1,excluded
+other-model,Como processar streams Java,Resposta produzida por outro modelo,1.0;0.0,ACTIVE,other-model,revision-1,excluded
+other-version,Como processar streams Java,Resposta produzida por outra revisao,1.0;0.0,ACTIVE,phase5-model,revision-2,excluded

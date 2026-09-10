@@ -1,6 +1,7 @@
 package com.aidevassistant.memory.adapter.out.mongodb;
 
 import com.aidevassistant.memory.application.port.out.MemoryRepository;
+import com.aidevassistant.memory.domain.model.Embedding;
 import com.aidevassistant.memory.domain.model.KnowledgeEntry;
 import com.aidevassistant.prompt.domain.model.NormalizedPrompt;
 import com.aidevassistant.prompt.domain.model.Prompt;
@@ -65,6 +66,22 @@ class MongoMemoryRepositoryIntegrationTest {
         assertTrue(indexNames.contains(MongoMemoryIndexInitializer.EXACT_LOOKUP_INDEX));
         assertTrue(indexNames.contains(MongoMemoryIndexInitializer.DEDUPLICATION_INDEX));
         assertTrue(indexNames.contains(MongoMemoryIndexInitializer.UPDATED_AT_INDEX));
+    }
+
+    @Test
+    void persistsEmbeddingAndItsIdentification() {
+        KnowledgeEntry saved = repository.save(knowledge("Vectorized solution", CREATED_AT));
+        Embedding embedding = new Embedding("test-model", "revision-1", vector(1.0f, 0.0f));
+        Instant generatedAt = CREATED_AT.plusSeconds(30);
+
+        KnowledgeEntry vectorized = repository.saveEmbedding(saved.id(), embedding, generatedAt).orElseThrow();
+
+        assertEquals(embedding, vectorized.embedding().orElseThrow());
+        assertEquals(generatedAt, vectorized.updatedAt());
+        KnowledgeDocument persisted = mongoOperations.findById(saved.id().toString(), KnowledgeDocument.class);
+        assertEquals(KnowledgeDocument.CURRENT_SCHEMA_VERSION, persisted.schemaVersion());
+        assertEquals("test-model", persisted.embedding().model());
+        assertEquals(384, persisted.embedding().dimension());
     }
 
     @Test
@@ -144,5 +161,12 @@ class MongoMemoryRepositoryIntegrationTest {
         } catch (Exception exception) {
             throw new IllegalStateException("Concurrent persistence failed", exception);
         }
+    }
+
+    private float[] vector(float first, float second) {
+        float[] values = new float[384];
+        values[0] = first;
+        values[1] = second;
+        return values;
     }
 }

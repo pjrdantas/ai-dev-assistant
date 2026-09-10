@@ -23,6 +23,15 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+memory:
+  semantic-search:
+    index-name: ${MEMORY_SEMANTIC_INDEX_NAME:semantic_vector_idx}
+    dimension: ${MEMORY_SEMANTIC_DIMENSION:384}
+    top-k: ${MEMORY_SEMANTIC_TOP_K:5}
+    num-candidates: ${MEMORY_SEMANTIC_NUM_CANDIDATES:100}
+    readiness-timeout: ${MEMORY_SEMANTIC_INDEX_TIMEOUT:90s}
+    readiness-poll-interval: ${MEMORY_SEMANTIC_INDEX_POLL_INTERVAL:250ms}
+
 embedding:
   local:
     enabled: ${EMBEDDING_LOCAL_ENABLED:false}

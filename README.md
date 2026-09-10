@@ -12,7 +12,7 @@ Assistente de desenvolvimento integrado ao VS Code que consulta uma memória loc
 
 ## Estado atual
 
-As Fases 1 a 4 contêm a fundação executável do backend, o núcleo de domínio, a persistência MongoDB da memória e o adapter de embeddings ONNX locais. Busca exata, deduplicação idempotente, índices tradicionais, registro de reutilização e geração local de vetores estão implementados. Busca semântica, classificação, orquestração e integração com IA ainda não foram implementadas.
+As Fases 1 a 5 contêm a fundação executável do backend, o núcleo de domínio, a persistência MongoDB da memória, o adapter de embeddings ONNX locais e a busca semântica. Busca exata, deduplicação idempotente, registro de reutilização, persistência de embeddings e `$vectorSearch` com índice verificado estão implementados. Classificação, compatibilidade, orquestração e integração com IA ainda não foram implementadas.
 
 ## Requisitos locais
 
@@ -32,6 +32,21 @@ Na raiz do projeto, baixe explicitamente os artefatos fixados e verifique seus c
 Os binários ficam em `backend/models` e não são versionados no Git. Para ativar o provider, execute o backend a partir da pasta `backend` com `EMBEDDING_LOCAL_ENABLED=true`. Se os artefatos estiverem ausentes ou divergirem dos checksums esperados, a inicialização falhará sem tentar download automático.
 
 Os resultados e comandos da prova técnica estão em `docs/embedding-benchmark.md`.
+
+## Busca semântica
+
+Na inicialização, o backend cria o índice vetorial quando necessário e aguarda seu estado `READY`. A execução é interrompida se o índice não ficar consultável dentro do prazo configurado.
+
+Parâmetros externos disponíveis:
+
+- `MEMORY_SEMANTIC_INDEX_NAME` (padrão `semantic_vector_idx`);
+- `MEMORY_SEMANTIC_DIMENSION` (padrão `384`);
+- `MEMORY_SEMANTIC_TOP_K` (padrão `5`);
+- `MEMORY_SEMANTIC_NUM_CANDIDATES` (padrão `100`);
+- `MEMORY_SEMANTIC_INDEX_TIMEOUT` (padrão `90s`);
+- `MEMORY_SEMANTIC_INDEX_POLL_INTERVAL` (padrão `250ms`).
+
+O dataset e os limites desta validação estão descritos em `docs/semantic-search-evaluation.md`.
 
 ## Executar o ambiente local
 

@@ -6,6 +6,7 @@ import com.aidevassistant.prompt.domain.model.PromptHash;
 
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 public record KnowledgeEntry(
@@ -16,6 +17,7 @@ public record KnowledgeEntry(
         String solution,
         KnowledgeStatus status,
         KnowledgeUsage usage,
+        Optional<Embedding> embedding,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -27,6 +29,7 @@ public record KnowledgeEntry(
         Objects.requireNonNull(solution, "Solution must not be null");
         Objects.requireNonNull(status, "Knowledge status must not be null");
         Objects.requireNonNull(usage, "Knowledge usage must not be null");
+        Objects.requireNonNull(embedding, "Embedding must not be null");
         Objects.requireNonNull(createdAt, "Creation date must not be null");
         Objects.requireNonNull(updatedAt, "Update date must not be null");
 
@@ -59,8 +62,28 @@ public record KnowledgeEntry(
                 solution,
                 KnowledgeStatus.ACTIVE,
                 KnowledgeUsage.unused(),
+                Optional.empty(),
                 createdAt,
                 createdAt);
+    }
+
+    public KnowledgeEntry withEmbedding(Embedding generatedEmbedding, Instant generatedAt) {
+        Objects.requireNonNull(generatedEmbedding, "Generated embedding must not be null");
+        Objects.requireNonNull(generatedAt, "Embedding generation date must not be null");
+        if (generatedAt.isBefore(updatedAt)) {
+            throw new IllegalArgumentException("Embedding generation date must not precede the last update");
+        }
+        return new KnowledgeEntry(
+                id,
+                prompt,
+                normalizedPrompt,
+                promptHash,
+                solution,
+                status,
+                usage,
+                Optional.of(generatedEmbedding),
+                createdAt,
+                generatedAt);
     }
 
     public KnowledgeEntry registerReuse(Instant usedAt) {
@@ -76,6 +99,7 @@ public record KnowledgeEntry(
                 solution,
                 status,
                 usage.registerAt(usedAt),
+                embedding,
                 createdAt,
                 usedAt);
     }

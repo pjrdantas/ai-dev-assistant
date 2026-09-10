@@ -1,5 +1,6 @@
 package com.aidevassistant.memory.application.port.out;
 
+import com.aidevassistant.memory.domain.model.Embedding;
 import com.aidevassistant.memory.domain.model.KnowledgeEntry;
 import com.aidevassistant.prompt.domain.model.PromptHash;
 
@@ -13,6 +14,10 @@ public interface MemoryRepository {
     List<KnowledgeEntry> findActiveByPromptHash(PromptHash promptHash);
 
     KnowledgeEntry save(KnowledgeEntry knowledgeEntry);
+
+    Optional<KnowledgeEntry> saveEmbedding(UUID knowledgeId, Embedding embedding, Instant generatedAt);
+
+    List<SemanticMemoryCandidate> findSimilar(Embedding queryEmbedding);
 
     Optional<KnowledgeEntry> registerReuse(UUID knowledgeId, Instant usedAt);
 }
