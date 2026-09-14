@@ -40,6 +40,16 @@ class ArchitectureTest {
     }
 
     @Test
+    void applicationMustNotDependOnFrameworksOrAdapters() {
+        noClasses()
+                .that().resideInAPackage("..application..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "org.springframework..",
+                        "..adapter..")
+                .check(PRODUCTION_CLASSES);
+    }
+
+    @Test
     void localEmbeddingAdapterMustNotDependOnNetworkApis() {
         noClasses()
                 .that().resideInAPackage("..adapter.out.onnx..")
@@ -57,6 +67,14 @@ class ArchitectureTest {
                 .should().dependOnClassesThat().resideInAnyPackage(
                         "java.net..",
                         "java.net.http..")
+                .check(PRODUCTION_CLASSES);
+    }
+
+    @Test
+    void promptApplicationMustNotAccessNetworkClients() {
+        noClasses()
+                .that().resideInAPackage("..prompt.application..")
+                .should().dependOnClassesThat().resideInAPackage("java.net.http..")
                 .check(PRODUCTION_CLASSES);
     }
 }

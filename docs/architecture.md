@@ -40,12 +40,12 @@ Princípios:
 └───────────────┬────────────────────┬─────────┘
                 │                    │ somente após memória
                 ▼                    ▼
-┌───────────────────────────┐  ┌────────────────────────┐
-│ Pipeline local de memória │  │ Integrações externas   │
-│                           │  │                        │
-│ normalização              │  │ AiProvider             │
-│ hash SHA-256              │  │ ExternalSearchProvider │
-│ busca exata               │  └────────────────────────┘
+┌───────────────────────────┐  ┌────────────────────────────┐
+│ Pipeline local de memória │  │ Autorização temporária    │
+│                           │  │ para o adapter Copilot    │
+│ normalização              │  │ da extensão VS Code       │
+│ hash SHA-256              │  └────────────────────────────┘
+│ busca exata               │
 │ embedding ONNX            │
 │ busca vetorial            │
 │ compatibilidade           │
@@ -66,15 +66,18 @@ VS Code
   → ProcessPromptUseCase
   → PromptOrchestrator
   → memória local
-  → decisão
-  → integração externa somente quando necessária
+  → resposta FULL ou autorização temporária PARTIAL/NONE
+  → adapter Copilot da extensão, somente quando autorizado
+  → CompleteAiResponseUseCase
+  → persistência local antes da resposta final
 ```
 
 Fluxos proibidos:
 
 ```text
-Controller → provider de IA
-VS Code → provider de IA
+Controller → modelo de IA
+Componente visual → vscode.lm
+Extensão → vscode.lm sem autorização temporária do backend
 Ausência na memória local → pesquisa automática na internet
 ```
 
@@ -111,9 +114,6 @@ com.aidevassistant
 │           ├── embedded
 │           └── embedding
 │
-├── ai
-│   └── adapter
-│       └── out
 ├── projectcontext
 │   ├── domain
 │   └── application
@@ -163,12 +163,12 @@ Linguagens, frameworks, intents e providers não serão enums rígidos no núcle
 ### Entrada
 
 - `ProcessPromptUseCase`.
+- `CompleteAiResponseUseCase`.
 
 ### Saída
 
 - `MemoryRepository`;
 - `EmbeddingProvider`;
-- `AiProvider`;
 - `ExternalSearchProvider`;
 - `ProjectContextProvider`;
 - `MetricsRecorder`.
@@ -180,7 +180,7 @@ O `ExternalSearchProvider` será uma extensão planejada, mas não terá impleme
 - adapter REST para entrada de prompts;
 - adapter embutido para memória, busca exata e vetorial no produto final;
 - adapter ONNX para embeddings locais;
-- adapter para um primeiro provider de IA;
+- adapter TypeScript futuro para a Language Model API do VS Code;
 - adapter Micrometer para métricas;
 - adapter futuro para pesquisa externa;
 - adapter futuro para leitura controlada do workspace.
@@ -297,19 +297,98 @@ O diretório, a dimensão e o `top-K` são externos. A troca de versão principa
 11. classificar candidatos;
 12. construir um `ResolutionPlan`;
 13. em `FULL`, responder localmente;
-14. em `PARTIAL`, enviar à IA apenas conhecimento relevante e diferenças conhecidas;
-15. em `NONE`, enviar à IA somente prompt e contexto mínimo;
-16. persistir de modo idempotente a solução produzida;
-17. registrar métricas;
-18. devolver resposta e metadados de origem.
+14. em `PARTIAL`, autorizar temporariamente somente o conhecimento relevante e as diferenças;
+15. em `NONE`, autorizar temporariamente somente prompt e contexto mínimo;
+16. a extensão chama o Copilot com a autorização recebida;
+17. validar a correlação quando a extensão devolver a resposta;
+18. persistir de modo idempotente a solução produzida;
+19. registrar métricas;
+20. devolver resposta e metadados de origem.
 
 Pesquisa externa terá uma decisão própria e posterior à consulta de memória. Ela permanecerá desativada no primeiro MVP.
+
+### Implementação da Fase 7
+
+O port de entrada `ProcessPromptUseCase` recebe um `ProcessPromptCommand` com o prompt
+e o contexto técnico estruturado. O `PromptOrchestrator` implementa esse port sem
+depender de Spring ou de adapters.
+
+O fluxo implementado:
+
+1. normaliza o prompt e gera o hash;
+2. consulta todos os candidatos exatos e avalia a compatibilidade;
+3. interrompe o pipeline local sem gerar embedding quando encontra um `FULL` exato;
+4. quando necessário, gera o embedding local e consulta candidatos semânticos compatíveis;
+5. seleciona primeiro um `FULL` e, na ausência dele, o `PARTIAL` de maior similaridade;
+6. registra a reutilização antes de responder localmente ou autorizar seu uso externo;
+7. em `PARTIAL`, prepara somente o prompt, o contexto técnico permitido, a solução
+   selecionada e os motivos objetivos de adaptação;
+8. em `NONE`, não inclui conhecimento local na solicitação externa;
+9. exige que a resposta externa retorne com a autorização temporária correspondente;
+10. persiste a resposta produzida externamente, com o embedding já calculado, antes de
+    retornar sucesso.
+
+O `ResolutionPlan` impede combinações inconsistentes entre classificação e memória
+selecionada. O `AssistantResponse` protege as invariantes de origem, uso de IA,
+similaridade e pesquisa externa desabilitada.
+
+Falhas na busca exata, geração local do embedding, busca semântica ou registro de
+reutilização resultam em `MemoryUnavailableException` sem autorização para IA externa.
+Falha ao persistir uma resposta já produzida externamente resulta em
+`MemoryPersistenceException` e não é apresentada como sucesso.
+
+### Implementação da Fase 8
+
+O canal externo foi corrigido para usar a licença GitHub Copilot Enterprise do usuário
+pela Language Model API do VS Code. Como `vscode.lm` existe somente na extensão, o
+backend não possui cliente de IA, API key ou dependência de fornecedor.
+
+O `PromptOrchestrator` implementa duas operações. `ProcessPromptUseCase` conclui a
+memória e retorna uma resposta `FULL` ou uma `ExternalAiRequest` temporária para
+`PARTIAL`/`NONE`. `CompleteAiResponseUseCase` aceita a resposta do Copilot apenas quando
+o identificador corresponde a uma preparação válida e não expirada, persiste o
+conhecimento e então cria a resposta final.
+
+O conteúdo externo é minimizado e examinado para padrões de credenciais depois da busca
+local e antes de a autorização ser criada. Reenvios idênticos da conclusão retornam o
+mesmo resultado; conclusões divergentes, desconhecidas ou expiradas são recusadas.
+Preparações pendentes são efêmeras e desaparecem na reinicialização do backend.
+
+Ao final da Fase 8, o adapter TypeScript, o consentimento do usuário, a seleção defensiva
+de modelos `vendor: "copilot"` e o contrato REST funcional permaneceram pendentes para
+a fase da extensão. Pesquisa externa continuou desabilitada.
+
+### Implementação da Fase 10
+
+O backend expõe `POST /api/v1/prompts` e
+`POST /api/v1/prompts/{requestId}/ai-response` por um adapter REST. O controller somente
+valida e mapeia DTOs para `ProcessPromptUseCase` e `CompleteAiResponseUseCase`; decisão,
+consulta à memória, autorização e persistência permanecem no `PromptOrchestrator`.
+Erros funcionais são convertidos para Problem Details sem conteúdo da solicitação.
+
+A extensão é dividida em quatro responsabilidades concretas:
+
+- `AssistantViewProvider`: campo de prompt, estado e apresentação da resposta;
+- `PromptCoordinator`: impõe a ordem contexto local, backend, Copilot e conclusão;
+- `HttpAssistantBackend`: aceita somente URL HTTP de localhost e valida o contrato;
+- `CopilotLanguageModelGateway`: único componente que acessa `vscode.lm`.
+
+`VscodeProjectContextProvider` procura no máximo vinte `pom.xml` e `package.json`, ignora
+pastas de build e arquivos acima de 256 KiB e devolve somente linguagens, frameworks,
+versões e ferramenta de build. Conteúdo e caminhos não atravessam o contrato REST.
+
+O gateway seleciona exclusivamente `vendor: "copilot"`, respeita uma família preferida
+sem fixar modelos indisponíveis, conta tokens com o tokenizer do modelo, verifica o
+limite de entrada e consome a resposta em streaming. Falha de consentimento, licença,
+quota ou modelo não habilita outro provider.
 
 ## 14. Política de falhas
 
 Se a memória não puder ser consultada integralmente, nenhuma integração externa será chamada. O backend retornará um erro controlado e registrará a falha sem incluir conteúdo sensível.
 
-Se a IA produzir uma resposta e a persistência falhar, a operação não deverá ser apresentada como completamente bem-sucedida. Idempotência e estratégia de recuperação serão definidas durante a implementação do provider.
+Se a IA produzir uma resposta e a persistência falhar, a operação não será apresentada
+como bem-sucedida. A preparação permanece disponível para repetir a mesma conclusão sem
+contabilizar uma nova chamada externa.
 
 ## 15. Segurança
 
@@ -324,9 +403,11 @@ Se a IA produzir uma resposta e a persistência falhar, a operação não dever�
 
 ## 16. Observabilidade
 
-O backend deverá distinguir medidas reais de estimativas. A principal evidência de economia será `avoidedAiCalls`.
+O backend distingue medidas contadas de estimativas. A principal evidência de economia
+é `avoidedAiCalls`. O caso de uso depende da porta de saída `PromptMetricsRecorder`, e o
+adapter Micrometer traduz eventos operacionais para métricas sem expor conteúdo.
 
-Métricas planejadas:
+Indicadores cobertos pelas métricas implementadas:
 
 ```text
 totalPrompts
@@ -343,11 +424,24 @@ estimatedTokensSaved
 averageSimilarity
 ```
 
-Também serão medidas latências das etapas locais e externas, sem usar conteúdo do prompt como label.
+Uma autorização é registrada separadamente e não conta como chamada de IA. A chamada é
+considerada realizada somente na primeira conclusão externa aceita pelo backend. Tokens
+opcionais são contados pela extensão com o tokenizer do modelo selecionado e não são
+tratados como consumo faturado. A economia de uma resposta `FULL` usa uma estimativa por
+caracteres, em série separada.
+
+As latências de normalização, buscas, embedding, persistência e conclusão são medidas no
+backend. A duração da execução do Copilot é medida pela extensão. Somente
+enums limitados são labels; prompts, respostas, caminhos e identificadores nunca são
+labels. Falhas de telemetria não alteram o fluxo memory-first. O catálogo e a metodologia
+estão em `docs/observability.md` e na ADR 0015.
 
 ## 17. Restrições do MVP
 
-O MVP não executará comandos, não modificará automaticamente código, não abrirá pull requests, não terá múltiplos agentes, não dependerá do Copilot e não fará deploy em cloud.
+O MVP não executará comandos, não modificará automaticamente código, não abrirá pull
+requests, não terá múltiplos agentes e não fará deploy em cloud. A funcionalidade de IA
+dependerá do GitHub Copilot Enterprise disponível e autorizado no VS Code do usuário;
+sem ele, o reaproveitamento local continuará disponível.
 
 ## 18. Proteção arquitetural
 
@@ -360,3 +454,22 @@ Testes arquiteturais deverão garantir que:
 - falha na memória impeça chamadas externas.
 
 As decisões detalhadas estão registradas em `docs/decisions`.
+
+## 19. Endurecimento da integração
+
+Na Fase 11, um teste de aplicação atravessa o adapter REST, o `PromptOrchestrator` e o
+adapter Lucene. O cenário cria uma autorização `NONE`, devolve uma conclusão externa
+simulada, confirma a persistência e repete o mesmo prompt para obter `FULL` sem nova
+chamada. O mesmo teste verifica os contadores de prompts, chamadas realizadas e chamadas
+evitadas.
+
+Na extensão, o contrato recebido do backend é aceito somente quando identificadores,
+similaridade, classificação, fonte e indicador de IA formam uma combinação válida.
+Corpos HTTP acima de 300.000 caracteres e respostas do Copilot acima de 200.000
+caracteres são recusados. Esses limites protegem o processo da extensão e permanecem
+acima do limite funcional de 200.000 caracteres aplicado à conclusão pelo backend.
+
+O gateway carrega a API do VS Code somente ao executar uma autorização válida. Essa
+fronteira permite testar seleção de modelo, fallback restrito ao mesmo vendor, streaming,
+tokens e limites sem chamar um modelo real. A extensão não declara dependência obrigatória
+do Copilot no manifesto, preservando respostas `FULL` para usuários sem modelo disponível.

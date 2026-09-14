@@ -1,0 +1,88 @@
+{
+  "name": "ai-dev-assistant",
+  "displayName": "AI Dev Assistant",
+  "description": "Assistente memory-first integrado ao GitHub Copilot do VS Code.",
+  "version": "0.1.0",
+  "publisher": "ai-dev-assistant",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pjrdantas/ai-dev-assistant.git"
+  },
+  "engines": {
+    "vscode": "^1.137.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "main": "./out/src/extension.js",
+  "activationEvents": [
+    "onView:aiDevAssistant.view"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true,
+      "description": "A extensão lê somente pom.xml e package.json com limite de tamanho; não executa comandos no workspace."
+    }
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiDevAssistant",
+          "title": "AI Dev Assistant",
+          "icon": "media/assistant.svg"
+        }
+      ]
+    },
+    "views": {
+      "aiDevAssistant": [
+        {
+          "id": "aiDevAssistant.view",
+          "name": "Assistant",
+          "type": "webview"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AI Dev Assistant",
+      "properties": {
+        "aiDevAssistant.backendUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8080",
+          "description": "URL HTTP local do backend. Somente localhost é aceito."
+        },
+        "aiDevAssistant.requestTimeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1000,
+          "maximum": 120000,
+          "description": "Tempo limite das chamadas ao backend local, em milissegundos."
+        },
+        "aiDevAssistant.copilotModelFamily": {
+          "type": "string",
+          "default": "",
+          "description": "Família Copilot preferida. Se indisponível, outro modelo permitido será selecionado."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test \"out/test/*.test.js\"",
+    "package:vsix": "vsce package --no-dependencies --out ai-dev-assistant-0.1.0.vsix",
+    "verify": "npm test && npm run package:vsix"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "@types/vscode": "1.137.0",
+    "@vscode/vsce": "3.9.2",
+    "typescript": "7.0.2"
+  }
+}

@@ -46,7 +46,9 @@ CLASSIFICAÇÃO: FULL / PARTIAL / NONE
 DECISÃO SOBRE IA E PESQUISA EXTERNA
 ```
 
-Nenhum controller, componente de apresentação ou extensão do VS Code poderá chamar um provedor de IA diretamente. Toda chamada deverá passar pelo `PromptOrchestrator`.
+Nenhum controller ou componente de apresentação poderá chamar um modelo diretamente. A
+única chamada permitida ocorrerá em um adapter TypeScript da extensão, depois que o
+`PromptOrchestrator` concluir a memória e emitir uma autorização temporária para IA.
 
 Se a consulta obrigatória à memória não puder ser concluída, o comportamento padrão do MVP será falhar de forma controlada sem chamar a IA externa.
 
@@ -89,7 +91,7 @@ Quando não houver conhecimento suficiente:
 IA e internet são integrações diferentes:
 
 ```text
-AiProvider
+CopilotLanguageModelGateway
 ExternalSearchProvider
 ```
 
@@ -137,7 +139,7 @@ Responsabilidades conceituais esperadas:
 - avaliação de compatibilidade;
 - classificação da memória;
 - persistência e registro de reutilização;
-- acesso abstrato a IA externa;
+- preparação e conclusão controladas de IA externa;
 - acesso abstrato a pesquisa externa;
 - composição da resposta;
 - captura controlada do contexto do projeto;
@@ -151,17 +153,19 @@ O desenho deve permitir ports equivalentes a:
 
 ```text
 ProcessPromptUseCase
+CompleteAiResponseUseCase
 MemoryRepository
 EmbeddingProvider
-AiProvider
 ExternalSearchProvider
 ProjectContextProvider
 MetricsRecorder
 ```
 
-O domínio não poderá depender diretamente de OpenAI, Anthropic, Gemini, MongoDB, APIs externas ou VS Code.
+O domínio não poderá depender diretamente de OpenAI, Anthropic, Gemini, MongoDB, APIs
+externas, GitHub Copilot ou VS Code.
 
-Novos providers, como OpenAI, Claude, Gemini ou LLM local, deverão ser adicionados por adapters sem alterar a regra central.
+O acesso ao Copilot será encapsulado por um gateway TypeScript na extensão. Uma futura
+troca de canal deverá ocorrer por adapter sem alterar a regra central.
 
 ## 9. Busca exata
 
@@ -311,7 +315,13 @@ A extensão conversará inicialmente com:
 http://localhost:8080
 ```
 
-Ela deverá funcionar sem GitHub Copilot. Integrações com Copilot, Chat Participant API e Language Model Tool API ficam para o futuro.
+A IA externa exige um usuário com GitHub Copilot Enterprise disponível no VS Code. A
+extensão usará a Language Model API com `vendor: "copilot"`, somente após receber do
+backend uma solicitação externa temporária produzida pela consulta memory-first.
+
+A interface não acessará `vscode.lm` diretamente. Um coordenador da extensão chamará o
+backend, encaminhará ao adapter Copilot apenas o contexto autorizado e devolverá a
+resposta ao backend para persistência antes de apresentá-la como concluída.
 
 ## 16. Configuração
 
@@ -321,8 +331,8 @@ Configurações externas previstas:
 - threshold de match completo;
 - threshold de match parcial;
 - top-K da busca vetorial;
-- provider, modelo, temperatura e limite de tokens da IA;
-- API key;
+- preferência defensiva entre modelos Copilot disponibilizados ao usuário;
+- validade e limite de tamanho das solicitações externas pendentes;
 - provider e modelo de embedding;
 - habilitação de pesquisa externa.
 
@@ -348,7 +358,7 @@ O sistema deverá:
 
 ## 18. Observabilidade
 
-Métricas desejadas:
+Métricas implementadas pelo adapter Micrometer:
 
 ```text
 totalPrompts
@@ -366,7 +376,16 @@ averageSimilarity
 
 Também deverão ser consideradas latências de normalização, embedding, persistência local e IA, além de `avoidedAiCalls`.
 
-Contagens reais e estimativas devem ser apresentadas separadamente. Prompts, caminhos e identificadores de projeto não devem ser usados como labels de alta cardinalidade.
+Uma autorização externa não conta como chamada realizada. A chamada só é contabilizada
+quando a primeira conclusão correlacionada é aceita pelo backend. Tokens de entrada e
+saída serão enviados opcionalmente pela extensão depois de serem contados com
+`LanguageModelChat.countTokens`; eles não representam faturamento do provider.
+
+`estimatedTokensSaved` usa a aproximação `ceil(totalCharacters / 4)` para prompt,
+contexto técnico e solução local em respostas `FULL`. Contagens medidas e estimativas
+devem ser apresentadas separadamente. Prompts, respostas, caminhos e identificadores de
+projeto ou invocação não devem ser usados como labels de alta cardinalidade. A
+metodologia e o catálogo estão em `docs/observability.md`.
 
 ## 19. Contrato de resposta
 
@@ -397,11 +416,12 @@ O MVP deverá:
 8. avaliar compatibilidade;
 9. classificar como `FULL`, `PARTIAL` ou `NONE`;
 10. responder localmente em `FULL`;
-11. usar memória e IA somente para complemento em `PARTIAL`;
-12. chamar IA em `NONE`;
-13. persistir a solução produzida;
-14. devolver resposta e metadados;
-15. integrar com a extensão do VS Code.
+11. preparar contexto mínimo para complemento em `PARTIAL`;
+12. autorizar temporariamente uma chamada Copilot em `PARTIAL` ou `NONE`;
+13. chamar o Copilot pela extensão e devolver a resposta ao backend;
+14. persistir a solução produzida somente após validar a autorização;
+15. devolver resposta e metadados;
+16. integrar com a extensão do VS Code.
 
 ## 21. Fora do escopo inicial
 
@@ -411,7 +431,8 @@ Não implementar inicialmente:
 - execução automática de comandos;
 - alteração automática de código;
 - pull requests automáticos;
-- integração com GitHub;
+- integração geral com repositórios e APIs do GitHub;
+- providers configurados por API key própria;
 - multiusuário e autenticação;
 - deploy em cloud ou Kubernetes;
 - frontend Angular separado;
@@ -435,13 +456,15 @@ Testes devem existir desde o início, especialmente para:
 Cenários mínimos do `PromptOrchestrator`:
 
 ```text
-FULL    → AiProvider nunca é chamado
-PARTIAL → memória é usada e a IA recebe somente o complemento necessário
-NONE    → IA é chamada e a nova solução é persistida
-ERRO NA MEMÓRIA → nenhuma integração externa é chamada
+FULL    → nenhuma solicitação externa é criada
+PARTIAL → memória é usada e uma solicitação mínima é autorizada
+NONE    → uma solicitação mínima é autorizada após a busca local
+CONCLUSÃO → somente uma autorização válida aceita e persiste a resposta
+ERRO NA MEMÓRIA → nenhuma solicitação externa é criada
 ```
 
-O `PromptOrchestrator` deve ser testável com mocks ou fakes dos ports externos.
+O `PromptOrchestrator` deve ser testável com mocks ou fakes dos ports locais, sem chamar
+um modelo real.
 
 ## 23. Visão futura
 

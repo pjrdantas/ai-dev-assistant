@@ -12,13 +12,28 @@ Assistente de desenvolvimento integrado ao VS Code que consulta uma memória loc
 
 ## Estado atual
 
-As Fases 1 a 6A contêm a fundação do backend, o núcleo de domínio, embeddings ONNX, busca exata e semântica, compatibilidade técnica e classificação `FULL`, `PARTIAL` e `NONE`.
+As Fases 1 a 11 estão concluídas e contêm a fundação do backend,
+o núcleo de domínio, embeddings ONNX,
+busca exata e semântica, compatibilidade técnica, classificação `FULL`, `PARTIAL` e
+`NONE`, a orquestração obrigatória memory-first em duas etapas e a observabilidade
+local com Micrometer, o contrato REST e a extensão funcional do VS Code.
 
 A memória final usa Apache Lucene embutido no processo Java. MongoDB, mongot, Testcontainers e Docker foram removidos do backend e não são necessários para executar ou testar o produto.
 
+O `PromptOrchestrator` responde somente com a memória em `FULL`, usa uma única solução
+local selecionada como contexto para complemento em `PARTIAL` e solicita uma resposta
+externa em `NONE`. Qualquer falha durante a consulta local impede a chamada externa.
+Em `PARTIAL` e `NONE`, o backend prepara uma solicitação temporária somente depois da
+consulta local. A extensão chama o GitHub Copilot Enterprise pela Language Model API do
+VS Code e devolve a resposta ao backend para persistência. Somente o
+`CopilotLanguageModelGateway` acessa `vscode.lm`; a view depende do coordenador.
+
 ## Requisitos locais
 
-- Java 21.
+- Java 21;
+- Node.js 22 para desenvolver a extensão;
+- VS Code 1.137 ou superior;
+- GitHub Copilot Enterprise disponível no VS Code para respostas externas.
 
 O Maven não precisa estar instalado globalmente porque o backend inclui o Maven Wrapper.
 
@@ -58,18 +73,51 @@ A calibração e suas limitações estão documentadas em `docs/classification-c
 
 ## Executar o backend
 
+O produto não utiliza API key própria de IA. Na fase da extensão, o acesso será feito
+pelo usuário autenticado no GitHub Copilot Enterprise dentro do VS Code, sujeito a
+consentimento, licença, quota e políticas da organização.
+
 Na raiz do projeto:
 
 ```powershell
 cd backend
+$env:EMBEDDING_LOCAL_ENABLED="true"
 .\mvnw.cmd spring-boot:run
 ```
 
 Endpoints operacionais:
 
 - health check: `http://localhost:8080/actuator/health`;
+- métricas: `http://localhost:8080/actuator/metrics`;
 - OpenAPI: `http://localhost:8080/v3/api-docs`;
 - Swagger UI: `http://localhost:8080/swagger-ui.html`.
+
+Endpoints funcionais:
+
+- preparação: `POST http://localhost:8080/api/v1/prompts`;
+- conclusão externa: `POST http://localhost:8080/api/v1/prompts/{requestId}/ai-response`.
+
+## Executar a extensão
+
+```powershell
+cd vscode-extension
+npm install
+npm test
+```
+
+Abra a raiz do projeto no VS Code e pressione `F5`. A view `AI Dev Assistant` aparecerá
+na Activity Bar. A extensão aceita somente um backend HTTP em localhost, lê apenas
+`pom.xml` e `package.json` com limite de tamanho e envia somente tecnologias e versões.
+
+O roteiro completo de execução, validação do Copilot Enterprise, falhas controladas,
+métricas e empacotamento está em [`docs/operations.md`](docs/operations.md).
+
+Para gerar o pacote instalável local:
+
+```powershell
+cd vscode-extension
+npm run package:vsix
+```
 
 ## Testes do backend
 

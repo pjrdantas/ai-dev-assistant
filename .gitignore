@@ -17,6 +17,7 @@ dist/
 build/
 coverage/
 *.tsbuildinfo
+*.vsix
 
 # VS Code
 .vscode/*

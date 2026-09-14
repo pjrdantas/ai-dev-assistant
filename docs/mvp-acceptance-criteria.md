@@ -3,7 +3,8 @@
 ## 1. Regra central
 
 - Toda solicitação válida consulta a memória antes de qualquer integração externa.
-- Controller e extensão VS Code não possuem acesso direto a `AiProvider`.
+- Controller e componentes visuais não acessam modelos diretamente.
+- O adapter Copilot da extensão só chama `vscode.lm` após autorização do backend.
 - Falha na memória impede chamadas de IA e pesquisa externa.
 - A regra é protegida por testes unitários, de integração e arquiteturais.
 
@@ -33,9 +34,10 @@
 
 ## 5. Orquestração
 
-- `FULL`: responde com memória e nunca chama `AiProvider`.
-- `PARTIAL`: usa memória, envia contexto mínimo e chama IA para adaptação ou complemento.
-- `NONE`: chama IA somente depois de concluir a busca local.
+- `FULL`: responde com memória e não cria autorização para IA.
+- `PARTIAL`: usa memória e prepara contexto mínimo para adaptação ou complemento.
+- `NONE`: prepara contexto mínimo somente depois de concluir a busca local.
+- Uma resposta externa só é aceita com autorização pendente e não expirada.
 - Respostas geradas externamente são persistidas antes de uma conclusão bem-sucedida.
 - Persistência e reprocessamento são idempotentes.
 
@@ -60,14 +62,16 @@
 ## 8. Observabilidade
 
 - O backend mede prompts, hits locais, chamadas de IA e chamadas evitadas.
-- Tokens reais são separados de valores estimados.
+- Tokens contados pelo modelo são separados de valores estimados e não são apresentados
+  como consumo faturado.
 - `estimatedTokensSaved` possui metodologia documentada.
 - Prompts e identificadores de alta cardinalidade não são labels de métricas.
 
 ## 9. Extensão VS Code
 
-- A extensão funciona sem GitHub Copilot.
+- A IA externa exige GitHub Copilot Enterprise disponível para o usuário no VS Code.
 - A extensão se comunica apenas com o backend local configurado.
+- Um adapter separado usa `vscode.lm` com `vendor: "copilot"` e consentimento do usuário.
 - O usuário consegue enviar prompt e visualizar resposta.
 - A interface apresenta fonte, similaridade e utilização de IA.
 - A extensão não executa comandos nem modifica arquivos automaticamente.
@@ -75,7 +79,8 @@
 ## 10. Qualidade
 
 - Testes automatizados cobrem normalização, hash, busca, classificação e orquestração.
-- Testes comprovam que `AiProvider` não é chamado em `FULL`.
+- Testes comprovam que nenhuma solicitação externa é criada em `FULL`.
+- Testes comprovam que conclusões externas não correlacionadas são recusadas.
 - Testes comprovam que memória indisponível bloqueia integrações externas.
 - Testes arquiteturais verificam a direção das dependências.
 - O ambiente final pode ser iniciado de forma reproduzível sem Docker.
@@ -88,9 +93,24 @@ Não são necessários para considerar o primeiro MVP concluído:
 - múltiplos agentes;
 - execução e edição automática;
 - pull requests;
-- GitHub/Copilot;
+- integração geral com repositórios e APIs do GitHub;
 - autenticação ou multiusuário;
 - cloud, Kubernetes ou marketplace;
 - dashboard complexo;
 - fine-tuning;
 - pesquisa externa ativa.
+
+## 12. Evidências da Fase 11
+
+- O teste `PromptEndToEndIntegrationTest` cobre REST, orquestração, Lucene, conclusão
+  externa simulada, persistência, reutilização e métricas no mesmo cenário.
+- Os testes TypeScript comprovam seleção exclusiva de `vendor: "copilot"`, ausência de
+  fallback de fornecedor, limites de entrada e saída e rejeição de contratos inválidos.
+- O pacote VSIX é gerado pelo `@vscode/vsce` oficial e validado em um diretório isolado.
+- O smoke test com ONNX e Lucene reais confirmou persistência, reutilização e os
+  contadores de uma chamada realizada e uma chamada evitada.
+- O aceite manual iniciado pelo usuário com sua sessão GitHub Copilot Enterprise foi
+  concluído. A repetição exata retornou `LOCAL_MEMORY`, `FULL`, similaridade `1.00` e
+  nenhuma nova chamada à IA; as métricas da sessão registraram seis solicitações, duas
+  chamadas externas e quatro chamadas evitadas.
+- O procedimento reproduzível e os cenários de falha estão em `docs/operations.md`.

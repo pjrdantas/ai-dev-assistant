@@ -9,7 +9,9 @@ Ausência de memória não significa automaticamente que uma pergunta precisa de
 
 ## Decisão
 
-`AiProvider` e `ExternalSearchProvider` serão ports independentes. A decisão sobre pesquisa externa ocorrerá somente depois da memória e não será causada automaticamente por um resultado `NONE`.
+A autorização temporária para IA e o futuro `ExternalSearchProvider` serão fronteiras
+independentes. A decisão sobre pesquisa externa ocorrerá somente depois da memória e não
+será causada automaticamente por um resultado `NONE`.
 
 Pesquisa externa permanecerá desabilitada no primeiro MVP.
 

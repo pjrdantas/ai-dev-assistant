@@ -38,9 +38,12 @@ Objetivo: criar somente a fundação executável do backend.
 Status: concluída em 2026-09-09. Modelos de domínio, normalização conservadora v1, hash SHA-256 e ports externos foram implementados e validados por testes unitários e arquiteturais.
 
 - modelar `Prompt`, `NormalizedPrompt`, `PromptHash` e `KnowledgeEntry`;
-- criar os ports `MemoryRepository`, `EmbeddingProvider` e `AiProvider`;
+- criar os ports `MemoryRepository`, `EmbeddingProvider` e a fronteira inicial de IA;
 - implementar normalização conservadora e SHA-256;
 - criar testes unitários das invariantes.
+
+O port síncrono `AiProvider` criado nesta fase foi removido na correção da Fase 8,
+quando a integração passou para a Language Model API disponível somente na extensão.
 
 ## Fase 3 — persistência e busca exata
 
@@ -96,6 +99,12 @@ Status: concluída em 2026-09-10. Apache Lucene 10.5.1 foi adotado como adapter 
 
 ## Fase 7 — orquestração obrigatória
 
+Status: concluída em 2026-09-10. O `ProcessPromptUseCase`, o `PromptOrchestrator` e o
+`ResolutionPlan` implementam a sequência obrigatória de busca exata, embedding local,
+busca semântica, compatibilidade e decisão. Os fluxos `FULL`, `PARTIAL`, `NONE` e
+falhas locais foram validados com mocks, inclusive a ausência de chamadas externas antes
+da conclusão da memória e a persistência das respostas produzidas externamente.
+
 - implementar `ProcessPromptUseCase` e `PromptOrchestrator`;
 - criar `ResolutionPlan`;
 - testar os fluxos `FULL`, `PARTIAL` e `NONE` com fakes ou mocks;
@@ -104,38 +113,74 @@ Status: concluída em 2026-09-10. Apache Lucene 10.5.1 foi adotado como adapter 
 
 ## Fase 8 — primeira integração com IA
 
-- escolher e implementar um único adapter de `AiProvider`;
-- configurar modelo, temperatura, limite de tokens e segredo externamente;
-- aplicar sanitização e minimização de contexto;
-- implementar timeouts e tratamento de erros;
-- persistir respostas de modo idempotente.
+Status: corrigida e concluída em 2026-09-10. O backend passou a preparar solicitações
+externas temporárias somente depois da consulta memory-first e a aceitar conclusões
+correlacionadas antes da persistência. A decisão OpenAI foi descartada em favor do
+GitHub Copilot Enterprise pela Language Model API do VS Code.
+
+- remover cliente, configuração e credencial de IA do backend;
+- dividir preparação e conclusão externa em operações correlacionadas;
+- aplicar bloqueio de segredos, minimização e limite de contexto antes da autorização;
+- recusar conclusões desconhecidas, expiradas ou divergentes;
+- persistir conclusões válidas de modo idempotente.
 
 Pesquisa externa continuará fora do escopo nesta fase.
 
 ## Fase 9 — observabilidade
 
+Status: concluída em 2026-09-10. O backend registra métricas Micrometer sem conteúdo,
+distingue autorização de conclusão externa, separa tokens contados de economia estimada
+e expõe o catálogo local pelo Actuator. A extensão fornecerá tokens e latência do
+Copilot quando o adapter `vscode.lm` for implementado na Fase 10.
+
 - registrar hits exatos e semânticos;
 - registrar chamadas evitadas e realizadas;
-- capturar tokens informados pelo provider;
+- receber tokens contados com o tokenizer do modelo selecionado;
 - documentar a estimativa de tokens economizados;
 - medir latência das etapas;
 - evitar conteúdo sensível e labels de alta cardinalidade.
 
 ## Fase 10 — extensão VS Code
 
+Status: concluída em 2026-09-10. A extensão TypeScript fornece uma view na Activity Bar,
+captura somente metadados de manifests permitidos, consulta o backend local e acessa
+`vscode.lm` exclusivamente depois de `AI_REQUIRED`. O contrato REST em duas etapas foi
+implementado no backend. Tokens e duração são medidos pela extensão; chamadas reais ao
+Copilot permanecem fora dos testes automatizados para respeitar quota e não
+determinismo.
+
 - criar sidebar ou painel simples;
 - receber o prompt;
 - chamar somente o backend local;
+- implementar o adapter `vscode.lm` com `vendor: "copilot"`;
+- chamar o Copilot somente após autorização temporária do backend;
+- respeitar consentimento, quota e modelos permitidos pelo Enterprise;
 - apresentar resposta, fonte, similaridade e uso de IA;
 - não executar comandos nem modificar arquivos automaticamente.
 
 ## Fase 11 — integração e endurecimento
 
-- realizar testes ponta a ponta;
-- validar cenários de indisponibilidade;
-- revisar limites de payload e sanitização;
-- consolidar documentação operacional;
-- demonstrar métricas de reutilização e economia.
+Status: concluída em 2026-09-14. O fluxo REST completo foi automatizado com memória
+Lucene temporária, conclusão externa simulada, reutilização `FULL` e verificação de
+métricas. A extensão passou a validar invariantes do contrato, UUIDs, similaridade e
+limites das respostas; o gateway Copilot ganhou testes determinísticos sem consumir
+quota. O empacotamento VSIX e sua instalação isolada foram validados localmente.
+
+O smoke test operacional com o modelo ONNX real confirmou `NONE → AI_REQUIRED → AI →
+FULL`, duas solicitações processadas, uma chamada registrada e uma chamada evitada. A
+conclusão externa desse teste foi simulada para não consumir quota do usuário.
+
+O aceite manual iniciado pelo usuário no Extension Development Host foi concluído com
+sua sessão GitHub Copilot Enterprise. Em uma memória Lucene isolada, as métricas finais
+registraram seis solicitações, duas chamadas externas autorizadas e quatro chamadas
+evitadas. A repetição exata apresentou `LOCAL_MEMORY`, `FULL`, similaridade `1.00` e
+`aiCalled=false`, confirmando a regra memory-first no fluxo real.
+
+- testes ponta a ponta realizados;
+- cenários de indisponibilidade validados;
+- limites de payload e sanitização revisados;
+- documentação operacional consolidada;
+- métricas de reutilização e economia demonstradas.
 
 ## Evoluções posteriores ao MVP
 
@@ -145,5 +190,5 @@ Pesquisa externa continuará fora do escopo nesta fase.
 - versionamento e soluções substituídas;
 - análise ampliada do workspace;
 - módulos especializados;
-- integração opcional com APIs do Copilot;
+- novos canais de IA por adapters explicitamente aprovados;
 - geração assistida de testes E2E/Cucumber a partir de referências locais.
