@@ -1,9 +1,12 @@
 {
   "name": "ai-dev-assistant",
   "displayName": "AI Dev Assistant",
-  "description": "GitHub Copilot Custom Agent with local MongoDB memory and semantic retrieval for VS Code.",
-  "version": "0.1.5",
+  "description": "Custom Agent para GitHub Copilot com memória técnica local, busca semântica e reutilização de soluções.",
+  "version": "0.1.6",
   "publisher": "ai-dev-assistant-local",
+  "author": {
+    "name": "Paulo Dantas"
+  },
   "private": true,
   "repository": {
     "type": "git",
@@ -141,7 +144,7 @@
     "compile": "npm run clean && tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test": "npm run compile && node --test \"out/test/*.test.js\"",
-    "package:vsix": "vsce package --out ai-dev-assistant-0.1.0.vsix",
+    "package:vsix": "vsce package",
     "verify": "npm test && npm run package:vsix"
   },
   "devDependencies": {
