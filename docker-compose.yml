@@ -1,3 +1,0 @@
-# O produto final não utiliza containers. Arquivo mantido apenas para preservar
-# a estrutura inicial do projeto; nenhum serviço deve ser adicionado sem nova ADR.
-services: {}

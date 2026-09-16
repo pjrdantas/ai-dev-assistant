@@ -5,8 +5,31 @@ test/**
 tsconfig.json
 out/test/**
 out/**/*.map
-node_modules/**
 package-lock.json
 *.vsix
 *.log
 *.tsbuildinfo
+node_modules/**/*.map
+node_modules/**/*.ts
+node_modules/**/*.d.ts
+node_modules/**/docs/**
+node_modules/**/test/**
+node_modules/**/tests/**
+node_modules/**/README*
+node_modules/**/CHANGELOG*
+node_modules/**/bench/**
+node_modules/**/examples/**
+node_modules/**/scripts/**
+node_modules/**/.github/**
+node_modules/**/tsconfig.json
+node_modules/**/*test*.js
+# The Extension Host resolves the Node entry point. Keep both module formats for
+# VS Code and development verification plus its single SIMD/WASM backend.
+node_modules/onnxruntime-web/dist/*
+!node_modules/onnxruntime-web/dist/ort.node.min.js
+!node_modules/onnxruntime-web/dist/ort.node.min.mjs
+!node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs
+!node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm
+node_modules/onnxruntime-web/lib/**
+node_modules/@types/**
+node_modules/undici-types/**

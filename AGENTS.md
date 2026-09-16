@@ -1,23 +1,40 @@
 # Regras do projeto para o Codex
 
-- Trabalhar de forma incremental.
-- Não criar código desnecessário.
-- Não alterar a arquitetura sem justificar a mudança.
-- Não colocar regras de negócio em controllers.
-- Preservar a arquitetura hexagonal quando o desenvolvimento do backend for iniciado.
-- Não acessar diretamente provedores de IA a partir da camada de apresentação.
-- Nunca colocar API Keys, tokens, senhas ou outros segredos no código.
-- Sempre criar ou atualizar testes quando uma regra de negócio for implementada.
-- Evitar classes com nomes artificiais que não representem um domínio ou uma responsabilidade real.
-- Antes de grandes alterações, analisar o impacto no projeto.
-- O produto final deve funcionar no Windows sem Docker, containers ou daemon de banco de dados instalado separadamente.
-- Não introduzir dependências operacionais de Docker, MongoDB ou outro daemon externo.
-- A memória local usa Apache Lucene embutido; qualquer troca dessa tecnologia exige justificativa e ADR.
-- Antes de iniciar qualquer atividade, descrever de forma objetiva o que será desenvolvido ou alterado.
-- Antes de planejar ou implementar funcionalidades, consultar `docs/product-specification.md`, `docs/architecture.md`, `docs/roadmap.md` e os ADRs aplicáveis em `docs/decisions`.
+Antes de qualquer atividade, descreva objetivamente o que será analisado ou alterado.
+Antes de planejar ou mudar o projeto, consulte `docs/product-specification.md`,
+`docs/architecture.md`, `docs/roadmap.md` e os ADRs aplicáveis. Trabalhe de forma
+incremental, sem código desnecessário, e analise o impacto antes de mudanças grandes.
+Nunca coloque API keys, tokens, senhas ou segredos no código, documentação ou memória.
+Crie ou atualize testes ao implementar ou alterar regra de negócio.
 
-## Regra central da aplicação
+## Arquitetura obrigatória
 
-Toda solicitação do usuário deverá consultar primeiro a memória local antes de qualquer chamada para IA externa.
+O produto é um único VSIX com um Custom Agent nativo do GitHub Copilot e memória local.
+O GitHub Copilot, por meio do model picker nativo, é a única IA do produto.
 
-Esta regra deve orientar a arquitetura e a implementação futuras, mas ainda não deve ser implementada nesta fase.
+### Nunca
+
+- Adicionar WebView de chat, Activity Bar própria ou seletor próprio de LLM.
+- Adicionar backend, Java, Spring, REST, MongoDB Atlas, Lucene, Docker ou outro daemon
+  além do MongoDB local definido na ADR 0002 como requisito.
+- Fixar `model:` no arquivo `.agent.md`.
+- Declarar `tools:` de modo a restringir o agente às tools de memória.
+- Substituir as tools nativas do Copilot pelas tools `searchMemory` e `saveMemory`.
+- Alterar a arquitetura sem justificativa documentada em ADR.
+
+### Sempre
+
+- Preservar pesquisa e descoberta em todo o workspace, leitura de arquivos fechados,
+  edição multiarquivo, terminal, build e testes conforme as permissões nativas.
+- Preservar o model picker nativo do Copilot e o único VSIX como produto final.
+- Manter ONNX lazy: não carregar `onnxruntime-web` nem gerar embedding antes de um exact
+  miss; reutilizar a inicialização e a única `InferenceSession` compartilhada.
+- Manter `searchMemory` e `saveMemory` como ferramentas
+  complementares, locais e sem acesso à internet ou outro LLM.
+
+## Regra central
+
+Toda solicitação técnica tratada pelo AI Dev Assistant deve consultar primeiro a memória
+local antes de produzir uma nova solução técnica dentro do agent loop. Isso fornece
+contexto complementar e não impede o Copilot de pesquisar, ler, editar ou validar o
+workspace com suas ferramentas nativas.

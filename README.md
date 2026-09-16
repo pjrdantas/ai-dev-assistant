@@ -1,129 +1,93 @@
 # AI Dev Assistant
 
-Assistente de desenvolvimento integrado ao VS Code que consulta uma memória local antes de utilizar uma IA externa, visando reutilização de conhecimento e economia de tokens.
+## O que é
 
-## Estrutura do projeto
+AI Dev Assistant é um único VSIX que adiciona ao VS Code um Custom Agent nativo do
+GitHub Copilot com memória técnica local reutilizável. Ele não cria um chat próprio nem
+substitui o Copilot Agent.
 
-- `backend`: backend em Java 21 com Spring Boot.
-- `vscode-extension`: extensão do VS Code em TypeScript.
-- `docker`: diretório reservado da estrutura inicial; o produto não utiliza containers.
-- `docs`: documentação técnica, arquitetura e decisões do projeto.
-- `scripts`: scripts auxiliares de desenvolvimento.
+## Arquitetura
 
-## Estado atual
+O fluxo é: VS Code → GitHub Copilot Chat → model picker nativo → **AI Dev Assistant** →
+ferramentas nativas do Copilot Agent e tools adicionais de memória local. Antes de
+produzir uma nova solução técnica, o agente consulta a memória; em um exact miss, a busca
+semântica usa ONNX/WebAssembly local sob demanda.
 
-As Fases 1 a 11 estão concluídas e contêm a fundação do backend,
-o núcleo de domínio, embeddings ONNX,
-busca exata e semântica, compatibilidade técnica, classificação `FULL`, `PARTIAL` e
-`NONE`, a orquestração obrigatória memory-first em duas etapas e a observabilidade
-local com Micrometer, o contrato REST e a extensão funcional do VS Code.
+Não há backend, Java, Spring, Docker obrigatório, WebView, API key própria ou outro
+provider de IA. O GitHub Copilot é a única IA integrada pelo produto; MongoDB local é o
+store operacional da memória.
 
-A memória final usa Apache Lucene embutido no processo Java. MongoDB, mongot, Testcontainers e Docker foram removidos do backend e não são necessários para executar ou testar o produto.
+## Requisitos
 
-O `PromptOrchestrator` responde somente com a memória em `FULL`, usa uma única solução
-local selecionada como contexto para complemento em `PARTIAL` e solicita uma resposta
-externa em `NONE`. Qualquer falha durante a consulta local impede a chamada externa.
-Em `PARTIAL` e `NONE`, o backend prepara uma solicitação temporária somente depois da
-consulta local. A extensão chama o GitHub Copilot Enterprise pela Language Model API do
-VS Code e devolve a resposta ao backend para persistência. Somente o
-`CopilotLanguageModelGateway` acessa `vscode.lm`; a view depende do coordenador.
+- VS Code `1.137.0` ou superior;
+- GitHub Copilot disponível no VS Code;
+- suporte a Custom Agents e Agent mode na instalação e na conta do usuário.
+- MongoDB Community Server local em execução, acessível em
+  `mongodb://127.0.0.1:27017` por padrão.
 
-## Requisitos locais
+Os modelos disponíveis dependem da conta, plano e políticas do GitHub Copilot. O produto
+não exige Copilot Enterprise especificamente e não escolhe nem fixa um modelo.
 
-- Java 21;
-- Node.js 22 para desenvolver a extensão;
-- VS Code 1.137 ou superior;
-- GitHub Copilot Enterprise disponível no VS Code para respostas externas.
+## Instalação
 
-O Maven não precisa estar instalado globalmente porque o backend inclui o Maven Wrapper.
-
-## Preparar o modelo de embedding
-
-Na raiz do projeto, baixe explicitamente os artefatos fixados e verifique seus checksums:
+Baixe ou gere `vscode-extension/ai-dev-assistant-0.1.0.vsix` e instale-o:
 
 ```powershell
-.\scripts\embedding-model.ps1 prepare
+code --install-extension .\ai-dev-assistant-0.1.0.vsix
 ```
 
-Os binários ficam em `backend/models` e não são versionados no Git. Para ativar o provider, execute o backend a partir da pasta `backend` com `EMBEDDING_LOCAL_ENABLED=true`. Se os artefatos estiverem ausentes ou divergirem dos checksums esperados, a inicialização falhará sem tentar download automático.
+Também é possível usar **Extensions: Install from VSIX...** no VS Code.
 
-Os resultados e comandos da prova técnica estão em `docs/embedding-benchmark.md`.
+## Uso
 
-## Memória local e busca semântica
+1. Abra o workspace no VS Code.
+2. Abra o GitHub Copilot Chat e selecione **AI Dev Assistant** no seletor de Agents.
+3. Escolha o modelo disponível no model picker nativo.
+4. Faça sua solicitação de desenvolvimento.
 
-Na inicialização, o backend cria ou abre um índice Lucene no diretório configurado. O schema e a dimensão vetorial são validados antes de o repositório ficar disponível.
+## Workspace
 
-Parâmetros externos disponíveis:
+Os arquivos não precisam estar abertos. O Agent pode usar as ferramentas normais do
+VS Code/Copilot para localizar, pesquisar, ler e alterar os arquivos relevantes em todo
+o workspace, além de executar terminal, build e testes conforme suas permissões. Isso não
+significa que todo o codebase é enviado integralmente ao modelo.
 
-- `AI_DEV_ASSISTANT_MEMORY_DIRECTORY` (padrão `%USERPROFILE%\.ai-dev-assistant\memory` no Windows);
-- `MEMORY_VECTOR_DIMENSION` (padrão `384`);
-- `MEMORY_SEMANTIC_TOP_K` (padrão `5`).
+## Memória local
 
-O dataset e os limites desta validação estão descritos em `docs/semantic-search-evaluation.md`.
+`saveMemory` preserva a solicitação original do usuário e a solução reutilizável. A chave
+de exact match é normalizada localmente de forma determinística; o Copilot não define essa
+chave. `searchMemory` procura primeiro uma correspondência exata e, se necessário, uma
+correspondência semântica local. Os resultados são `FULL` (reutilizável e compatível),
+`PARTIAL` (relevante, mas requer adaptação) ou `NONE`.
 
-## Classificação
+O conhecimento é salvo no MongoDB local, database `ai_dev_assistant` por padrão. URI e
+database podem ser alterados pelas Settings `aiDevAssistant.mongodb.uri` e
+`aiDevAssistant.mongodb.database`; não coloque credenciais em configurações compartilhadas
+do workspace. ONNX e o tokenizer somente são
+inicializados na primeira busca semântica necessária; por isso essa primeira busca pode
+demorar mais, dependendo do hardware. Um exact match não inicializa ONNX.
 
-Parâmetros externos iniciais:
+## Comandos
 
-- `MEMORY_FULL_THRESHOLD` (padrão `0.90`);
-- `MEMORY_PARTIAL_THRESHOLD` (padrão `0.70`);
-- `MEMORY_MAXIMUM_FULL_AGE` (padrão `180d`).
+- **AI Dev Assistant: MongoDB Status** mostra conexão, URI sem credenciais, database e
+  contagens.
+- **AI Dev Assistant: Migrate Local Memory to MongoDB** migra o JSON histórico sem apagá-lo.
+- **AI Dev Assistant: Show Memory Statistics** e **Clear Local Memory** usam MongoDB;
+  limpar inativa memórias e preserva interações.
 
-A calibração e suas limitações estão documentadas em `docs/classification-calibration.md`.
+## Privacidade
 
-## Executar o backend
+O MongoDB local pode armazenar perguntas e respostas capturadas quando os hooks Preview
+estão habilitados, contexto técnico, sessões e embeddings numéricos de memórias
+reutilizáveis. Por padrão, ele é acessado somente em `mongodb://127.0.0.1:27017`; o
+produto não copia esse banco para um servidor próprio.
 
-O produto não utiliza API key própria de IA. Na fase da extensão, o acesso será feito
-pelo usuário autenticado no GitHub Copilot Enterprise dentro do VS Code, sujeito a
-consentimento, licença, quota e políticas da organização.
+A memória e seus embeddings são processados e persistidos localmente. As tools de memória
+não chamam internet nem outro LLM. A conversa enviada ao Copilot é processada pelo serviço
+normal do GitHub Copilot, sujeito à conta e às políticas aplicáveis. O AI Dev Assistant
+não faz chamadas próprias a OpenAI, Anthropic ou Gemini e não requer API key externa.
 
-Na raiz do projeto:
+## Desenvolvimento e validação
 
-```powershell
-cd backend
-$env:EMBEDDING_LOCAL_ENABLED="true"
-.\mvnw.cmd spring-boot:run
-```
-
-Endpoints operacionais:
-
-- health check: `http://localhost:8080/actuator/health`;
-- métricas: `http://localhost:8080/actuator/metrics`;
-- OpenAPI: `http://localhost:8080/v3/api-docs`;
-- Swagger UI: `http://localhost:8080/swagger-ui.html`.
-
-Endpoints funcionais:
-
-- preparação: `POST http://localhost:8080/api/v1/prompts`;
-- conclusão externa: `POST http://localhost:8080/api/v1/prompts/{requestId}/ai-response`.
-
-## Executar a extensão
-
-```powershell
-cd vscode-extension
-npm install
-npm test
-```
-
-Abra a raiz do projeto no VS Code e pressione `F5`. A view `AI Dev Assistant` aparecerá
-na Activity Bar. A extensão aceita somente um backend HTTP em localhost, lê apenas
-`pom.xml` e `package.json` com limite de tamanho e envia somente tecnologias e versões.
-
-O roteiro completo de execução, validação do Copilot Enterprise, falhas controladas,
-métricas e empacotamento está em [`docs/operations.md`](docs/operations.md).
-
-Para gerar o pacote instalável local:
-
-```powershell
-cd vscode-extension
-npm run package:vsix
-```
-
-## Testes do backend
-
-Toda a suíte executa com Java e Maven, sem Docker ou serviço de banco de dados externo.
-
-```powershell
-cd backend
-.\mvnw.cmd verify
-```
+Consulte [docs/operations.md](docs/operations.md) para os cenários manuais e os comandos
+de validação. A arquitetura e suas decisões estão em [docs](docs).

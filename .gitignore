@@ -1,53 +1,44 @@
-# Java e Maven
-*.class
-*.jar
-!**/.mvn/wrapper/maven-wrapper.jar
-*.war
-*.ear
-target/
-.mvn/timing.properties
-
 # Node.js e TypeScript
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
+out/
 dist/
 build/
 coverage/
 *.tsbuildinfo
-*.vsix
 
-# VS Code
+# Pacotes e logs gerados
+*.vsix
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Temporários e caches
+*.tmp
+*.temp
+*.swp
+*.swo
+.cache/
+.eslintcache
+
+# VS Code e IDEs
 .vscode/*
 !.vscode/extensions.json
 !.vscode/launch.json
 !.vscode/settings.json
 !.vscode/tasks.json
-
-# IntelliJ IDEA
 .idea/
 *.iml
-*.iws
-*.ipr
-/out/
-/backend/out/
-/vscode-extension/out/
 
-# Eclipse
-.classpath
-.project
-.settings/
-.factorypath
-
-# Windows
+# Sistema operacional
 Thumbs.db
 Thumbs.db:encryptable
 Desktop.ini
 $RECYCLE.BIN/
+.DS_Store
 
-# Variaveis de ambiente e segredos
+# Segredos e dados locais
 .env
 .env.*
 !.env.example
@@ -59,21 +50,4 @@ $RECYCLE.BIN/
 *.keystore
 credentials.json
 secrets.json
-
-# Logs e arquivos temporarios
-*.log
-logs/
-*.tmp
-*.temp
-*.swp
-*.swo
-
-# Modelos locais de embedding (preparados por script e validados por checksum)
-/backend/models/
-
-# Memória local quando configurada dentro do workspace
 /.ai-dev-assistant/
-/backend/.ai-dev-assistant/
-
-# Sistema operacional
-.DS_Store

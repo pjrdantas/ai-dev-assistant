@@ -1,6 +1,5 @@
 * text=auto
-
 *.sh text eol=lf
-mvnw text eol=lf
 *.cmd text eol=crlf
 *.bat text eol=crlf
+vscode-extension/models/paraphrase-multilingual-minilm/model.onnx filter=lfs diff=lfs merge=lfs -text

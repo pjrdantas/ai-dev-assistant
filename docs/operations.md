@@ -1,137 +1,138 @@
-# Operação local do MVP
+# Operação e validação manual
 
-## Objetivo
+## Pré-requisitos
 
-Este guia descreve como preparar, executar, validar e empacotar o AI Dev Assistant no
-Windows. O produto não exige Docker, container, MongoDB ou outro daemon de banco de
-dados.
+Instale VS Code compatível, o VSIX, MongoDB local e use uma conta com GitHub Copilot
+disponível. Não instale Java, backend, Docker ou daemon do AI Dev Assistant. MongoDB não
+é empacotado no VSIX; o padrão é `mongodb://127.0.0.1:27017`, database `ai_dev_assistant`.
 
-## Requisitos
+## Roteiro manual de cenário real
 
-- Java 21;
-- Node.js 22;
-- VS Code 1.137 ou superior;
-- GitHub Copilot disponível e autenticado no VS Code com a licença Enterprise do
-  usuário;
-- acesso à internet somente para instalar dependências, preparar explicitamente o
-  modelo e consumir o Copilot.
+1. Instale `ai-dev-assistant-0.1.0.vsix` com `code --install-extension`.
+2. Abra Copilot Chat e confirme **AI Dev Assistant** no seletor de Agents.
+3. Selecione o agente, abra o model picker e alterne entre modelos Copilot disponíveis.
+   O agente deve continuar selecionado; não existe seletor de modelo do plugin.
+4. **Cenário A — arquivo fechado:** abra um projeto Java, mantenha aberta somente uma
+   classe e deixe `pom.xml` fechado. Pergunte: “Qual versão do Spring Boot está neste
+   projeto?”. O agente deve localizar e ler o arquivo sem o usuário abri-lo.
+5. **Cenário B — alteração e validação:** peça: “Atualize dependência XPTO e execute os
+   testes.” O agente deve localizar o manifesto, editar os arquivos necessários e usar o
+   terminal para executar os testes, sujeito às permissões normais do VS Code.
+6. Peça para localizar os usos de uma interface no projeto e, depois, uma alteração que
+   envolva manifesto, classe e teste. Confirme pesquisa e edição multiarquivo.
+7. Peça para compilar e corrigir erros. Autorize as ferramentas usuais quando o VS Code
+   solicitar; o Agent deve conseguir usar terminal, build e testes.
+8. **Cenário C — modelo:** troque o modelo no model picker. **AI Dev Assistant** deve
+   continuar selecionado e usar o novo modelo disponível.
+9. **Cenário D — exact memory:** repita uma solicitação já salva. Confirme resultado
+   `FULL` sem inicialização de ONNX.
+10. **Cenário E — semantic memory:** faça solicitação semanticamente relacionada e
+   confirme a inicialização lazy de ONNX somente nesse momento.
+11. Salve uma solução reutilizável pela tool, feche e reabra o VS Code. Confirme que o
+   agente aparece sem carregar ONNX e que a memória local persiste.
+12. Confirme a ausência de Activity Bar e WebView próprias.
 
-O backend não recebe credenciais do GitHub e a extensão não possui API key própria.
-O VS Code solicita o consentimento do usuário quando a extensão tenta selecionar um
-modelo Copilot pela primeira vez.
+## Confirmação das tools de memória
 
-## Preparação inicial
+O VS Code pode solicitar confirmação antes de executar uma Language Model Tool de uma
+extensão. Revise a invocação e seus dados antes de permitir; quando a interface oferecer
+uma opção como **Always Allow**, ela controla a permissão no VS Code, não altera a
+localidade das tools. `searchMemory` consulta somente armazenamento e embedding locais;
+`saveMemory` salva somente no perfil local após a confirmação prevista pela extensão.
+Nenhuma das duas chama internet ou outro LLM.
 
-Na raiz do repositório:
+## Captura automática de interações (Preview)
+
+`UserPromptSubmit` é declarado no frontmatter de
+`vscode-extension/agents/ai-dev-assistant.agent.md`. Portanto, quando o runtime oferece
+suporte a hooks agent-scoped, o VS Code executa a captura **somente** quando
+o **AI Dev Assistant** está selecionado (ou é invocado como subagent). Não é usado
+transcript, título de conversa, conteúdo do prompt ou `cwd` para determinar o agente.
+
+Para habilitar, execute **AI Dev Assistant: Enable Automatic Interaction Capture** e
+confirme o aviso. A disponibilidade da configuração Preview
+`chat.useCustomAgentHooks` depende da versão/build do VS Code: o comando a detecta em
+runtime com `WorkspaceConfiguration.inspect` e só a ativa no perfil do usuário quando
+ela está registrada. Se não estiver disponível, a preparação dos launchers continua e o
+comando informa o suporte oferecido pelo runtime atual, sem erro e sem criar fallback
+global. Ele cria somente estes artefatos privados:
+
+```text
+~/.copilot/ai-dev-assistant/run-interaction-hook.ps1   (Windows)
+~/.copilot/ai-dev-assistant/run-interaction-hook.sh    (Linux/macOS)
+~/.copilot/ai-dev-assistant/.ai-dev-assistant-managed
+```
+
+O runner permanece no VSIX instalado, em `out/src/interactionHookRunner.js`. Os
+launchers usam o executável Node/Electron do Extension Host capturado durante a
+habilitação; não dependem de `node` no `PATH`. Windows usa o launcher PowerShell; Linux
+e macOS usam o launcher `sh`. Não é criado arquivo em `~/.copilot/hooks`, pois esse é
+um escopo global de usuário e poderia capturar prompts de outros Agents.
+
+Para desabilitar, execute **AI Dev Assistant: Disable Automatic Interaction Capture**.
+O comando remove apenas os dois launchers e o marcador acima, e só os remove se o
+marcador contiver o valor criado pelo próprio AI Dev Assistant. Hooks e arquivos de
+outros produtos não são modificados. Ao habilitar ou desabilitar, a extensão também pode
+remover o arquivo global legado `~/.copilot/hooks/ai-dev-assistant.json`, mas somente se
+o conteúdo comprovar que ele executa `interactionHookRunner.js` do AI Dev Assistant.
+A configuração Preview permanece uma escolha do
+usuário e pode ser desativada manualmente nas Settings do VS Code.
+
+### Teste manual de escopo
+
+1. Execute **AI Dev Assistant: Clear Interaction History**.
+2. Selecione **AI Dev Assistant** e envie: `Responda apenas teste AI Dev Assistant`.
+3. Execute **AI Dev Assistant: Show Interaction Statistics**. O esperado é **1** interação.
+4. Troque para o Agent padrão do Copilot e envie uma mensagem curta.
+5. Execute novamente **AI Dev Assistant: Show Interaction Statistics**. O total deve
+   continuar em **1**. Se chegar a 2, a captura tem falha de escopo e não deve ser usada.
+
+## Diagnóstico
+
+Execute no diretório `vscode-extension`:
 
 ```powershell
-java -version
-node --version
-code --version
-.\scripts\embedding-model.ps1 prepare
-cd vscode-extension
 npm ci
-```
-
-O comando do modelo é explícito, valida os checksums e grava os artefatos ignorados pelo
-Git em `backend/models`. Nenhum download ocorre durante o processamento de um prompt.
-
-## Iniciar o backend
-
-Em um terminal na raiz:
-
-```powershell
-cd backend
-$env:EMBEDDING_LOCAL_ENABLED="true"
-.\mvnw.cmd spring-boot:run
-```
-
-Antes de abrir a extensão, confirme:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8080/actuator/health
-```
-
-O resultado esperado é `status` igual a `UP`. A memória fica, por padrão, em
-`%USERPROFILE%\.ai-dev-assistant\memory`. Para uma validação isolada, defina
-`AI_DEV_ASSISTANT_MEMORY_DIRECTORY` antes de iniciar o backend.
-
-## Executar no Extension Development Host
-
-1. Abra a raiz do repositório no VS Code.
-2. Pressione `F5` e selecione `Executar AI Dev Assistant` se solicitado.
-3. No novo Extension Development Host, abra `AI Dev Assistant` na Activity Bar.
-4. Confirme que o GitHub Copilot está autenticado com a conta Enterprise.
-5. Envie uma solicitação técnica sem credenciais ou conteúdo confidencial.
-
-O primeiro envio sem conhecimento local deve mostrar o consentimento do VS Code quando
-necessário. A extensão só seleciona `vendor: "copilot"` depois de o backend devolver
-`AI_REQUIRED`. Não existe fallback para outro provider.
-
-## Roteiro manual de aceite
-
-Use um prompt novo e mantenha o mesmo contexto técnico entre as repetições.
-
-1. Primeiro envio: o resultado esperado é `AI`, classificação `NONE` e IA utilizada.
-2. Repita exatamente o mesmo prompt: o resultado esperado é `LOCAL_MEMORY`,
-   classificação `FULL` e IA não utilizada.
-3. Confirme que a segunda resposta é a solução persistida no primeiro envio.
-4. Consulte as métricas:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8080/actuator/metrics/ai.dev.assistant.prompts
-Invoke-RestMethod http://127.0.0.1:8080/actuator/metrics/ai.dev.assistant.ai.calls
-Invoke-RestMethod http://127.0.0.1:8080/actuator/metrics/ai.dev.assistant.ai.calls.avoided
-Invoke-RestMethod http://127.0.0.1:8080/actuator/metrics/ai.dev.assistant.tokens.saved.estimated
-```
-
-Depois desse roteiro, deve existir uma chamada realizada e pelo menos uma chamada
-evitada. Tokens contados pelo modelo e economia estimada são métricas diferentes.
-
-Chamadas reais ao Copilot não fazem parte da suíte automatizada porque consomem quota,
-dependem de consentimento e produzem respostas não determinísticas.
-
-## Cenários de indisponibilidade
-
-- Backend parado: a extensão informa que não conseguiu conectar ao backend local e não
-  chama o Copilot.
-- Modelo de embedding ausente ou inválido: o backend não inicia com o provider habilitado
-  ou responde com falha fechada; não existe fallback externo.
-- Memória local indisponível: o backend devolve `MEMORY_UNAVAILABLE` e a extensão informa
-  que a IA não foi chamada.
-- Copilot sem consentimento, licença, quota ou modelo permitido: a extensão informa a
-  indisponibilidade e não tenta outro fornecedor.
-- Autorização expirada: a conclusão é recusada e o usuário deve reenviar a solicitação.
-- Resposta ou contrato acima dos limites: a extensão interrompe o fluxo sem apresentar
-  conteúdo bruto do backend ou do provider.
-
-## Testes automatizados
-
-Backend:
-
-```powershell
-cd backend
-.\mvnw.cmd clean verify
-```
-
-Extensão:
-
-```powershell
-cd vscode-extension
 npm test
-```
-
-O teste ponta a ponta do backend usa embedding determinístico e memória Lucene temporária.
-Ele executa preparação REST, conclusão externa simulada, persistência, reutilização
-`FULL` e validação das métricas, sem rede e sem consumir Copilot.
-
-## Gerar e instalar o VSIX
-
-```powershell
-cd vscode-extension
+npm run compile
 npm run package:vsix
-code --install-extension .\ai-dev-assistant-0.1.0.vsix
+npx vsce ls
+node ..\scripts\verify-local-onnx.mjs
 ```
 
-O VSIX é um artefato local ignorado pelo Git. Esta fase não publica a extensão no
-Marketplace e não exige token de publisher.
+Um usuário **não precisa abrir `pom.xml` manualmente**. O Custom Agent preserva as
+ferramentas nativas de busca e leitura de workspace do Copilot, que permitem descobrir e
+ler arquivos fechados; o acesso continua sujeito às permissões normais do VS Code.
+
+## Legado JSON
+
+`knowledge-v1.json` e `FileLocalMemoryStore` permanecem exclusivamente para migração
+histórica e seus testes de durabilidade. MongoDB é o store ativo.
+
+## Parâmetros operacionais do legado JSON
+
+Os valores abaixo são os defaults efetivamente definidos em `FileLocalMemoryStore`; não
+representam recomendação nem configuração externa do usuário.
+
+- `MAX_CORRUPTION_BACKUPS`: `5`. Após renomear uma memória inválida, o store mantém no
+  máximo os cinco backups próprios mais recentes, ordenados por `mtime` decrescente e,
+  em empate, por nome decrescente.
+- stale lock: `30.000 ms`. Um arquivo `.lock` somente é removido após esse tempo desde
+  seu `mtime`; um lock mais novo permanece intacto.
+- timeout de aquisição: `1.000 ms`. Sem adquirir ou recuperar um lock obsoleto nesse
+  prazo, a operação falha sem executar a escrita protegida.
+- retry/backoff: intervalo fixo de `10 ms` entre tentativas enquanto não atinge o
+  timeout. Não há backoff exponencial.
+
+Para o arquivo principal `knowledge-v1.json`, os formatos gerados são:
+
+```text
+backup: knowledge-v1.corrupt.<YYYYMMDDTHHMMSSmmmZ>.<uuid>.json
+lock:   knowledge-v1.json.lock
+temp:   knowledge-v1.json.<uuid>.tmp
+```
+
+O padrão de retenção aceita somente backups próprios com timestamp UTC e UUID em
+minúsculas hexadecimais; arquivos de nome parecido não são candidatos à remoção. Arquivos
+temporários órfãos não são lidos como memória: somente o arquivo principal é interpretado
+na leitura.

@@ -1,9 +1,9 @@
 {
   "name": "ai-dev-assistant",
   "displayName": "AI Dev Assistant",
-  "description": "Assistente memory-first integrado ao GitHub Copilot do VS Code.",
-  "version": "0.1.0",
-  "publisher": "ai-dev-assistant",
+  "description": "GitHub Copilot Custom Agent with local MongoDB memory and semantic retrieval for VS Code.",
+  "version": "0.1.5",
+  "publisher": "ai-dev-assistant-local",
   "private": true,
   "repository": {
     "type": "git",
@@ -21,62 +21,127 @@
   ],
   "main": "./out/src/extension.js",
   "activationEvents": [
-    "onView:aiDevAssistant.view"
+    "onLanguageModelTool:ai-dev-assistant_searchMemory",
+    "onLanguageModelTool:ai-dev-assistant_saveMemory"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": true,
-      "description": "A extensão lê somente pom.xml e package.json com limite de tamanho; não executa comandos no workspace."
+      "description": "A extensão lê somente manifests permitidos para classificar sua memória local; o Copilot Agent mantém suas ferramentas nativas de workspace."
     }
   },
   "contributes": {
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "aiDevAssistant",
-          "title": "AI Dev Assistant",
-          "icon": "media/assistant.svg"
+    "commands": [
+      {
+        "command": "aiDevAssistant.showMemoryStatistics",
+        "title": "AI Dev Assistant: Show Memory Statistics"
+      },
+      {
+        "command": "aiDevAssistant.clearLocalMemory",
+        "title": "AI Dev Assistant: Clear Local Memory"
+      },
+      {
+        "command": "aiDevAssistant.mongodbStatus",
+        "title": "AI Dev Assistant: MongoDB Status"
+      },
+      {
+        "command": "aiDevAssistant.migrateLocalMemoryToMongoDB",
+        "title": "AI Dev Assistant: Migrate Local Memory to MongoDB"
+      },
+      {
+        "command": "aiDevAssistant.clearInteractionHistory",
+        "title": "AI Dev Assistant: Clear Interaction History"
+      },
+      {
+        "command": "aiDevAssistant.showInteractionStatistics",
+        "title": "AI Dev Assistant: Show Interaction Statistics"
+      },
+      {
+        "command": "aiDevAssistant.enableAutomaticInteractionCapture",
+        "title": "AI Dev Assistant: Enable Automatic Interaction Capture"
+      },
+      {
+        "command": "aiDevAssistant.disableAutomaticInteractionCapture",
+        "title": "AI Dev Assistant: Disable Automatic Interaction Capture"
+      }
+    ],
+    "chatAgents": [
+      {
+        "path": "./agents/ai-dev-assistant.agent.md"
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "ai-dev-assistant_searchMemory",
+        "displayName": "Consultar memória local",
+        "modelDescription": "Use esta tool antes de produzir uma nova solução técnica. Consulta exclusivamente a memória local do AI Dev Assistant e retorna FULL, PARTIAL ou NONE, similaridade, compatibilidade de contexto e, quando existir, uma solução reutilizável. Não chama IA nem internet.",
+        "userDescription": "Consulta conhecimento técnico local reutilizável.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "searchMemory",
+        "icon": "$(database)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "request": {
+              "type": "string",
+              "description": "Solicitação técnica do usuário a ser procurada na memória local."
+            }
+          },
+          "required": [
+            "request"
+          ]
         }
-      ]
-    },
-    "views": {
-      "aiDevAssistant": [
-        {
-          "id": "aiDevAssistant.view",
-          "name": "Assistant",
-          "type": "webview"
+      },
+      {
+        "name": "ai-dev-assistant_saveMemory",
+        "displayName": "Salvar memória local",
+        "modelDescription": "Após obter uma solução técnica reutilizável, use esta tool antes da resposta final para salvá-la automaticamente na memória local. originalRequest deve copiar literalmente a solicitação real do usuário; não resuma nem reformule. Rejeita conteúdo sensível, não chama IA nem internet.",
+        "userDescription": "Salva uma solução reutilizável apenas no perfil local do VS Code.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "saveMemory",
+        "icon": "$(save)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "originalRequest": {
+              "type": "string",
+              "description": "Solicitação técnica original do usuário, preservada sem resumo ou reformulação."
+            },
+            "solution": {
+              "type": "string",
+              "description": "Solução técnica reutilizável concluída, sem segredos ou credenciais."
+            }
+          },
+          "required": [
+            "originalRequest",
+            "solution"
+          ]
         }
-      ]
-    },
+      }
+    ],
     "configuration": {
-      "title": "AI Dev Assistant",
+      "title": "AI Dev Assistant MongoDB",
       "properties": {
-        "aiDevAssistant.backendUrl": {
+        "aiDevAssistant.mongodb.uri": {
           "type": "string",
-          "default": "http://127.0.0.1:8080",
-          "description": "URL HTTP local do backend. Somente localhost é aceito."
+          "default": "mongodb://127.0.0.1:27017",
+          "description": "URI do MongoDB local. Credenciais não devem ser gravadas em configurações compartilhadas do workspace."
         },
-        "aiDevAssistant.requestTimeoutMs": {
-          "type": "number",
-          "default": 30000,
-          "minimum": 1000,
-          "maximum": 120000,
-          "description": "Tempo limite das chamadas ao backend local, em milissegundos."
-        },
-        "aiDevAssistant.copilotModelFamily": {
+        "aiDevAssistant.mongodb.database": {
           "type": "string",
-          "default": "",
-          "description": "Família Copilot preferida. Se indisponível, outro modelo permitido será selecionado."
+          "default": "ai_dev_assistant",
+          "description": "Nome do database local do AI Dev Assistant."
         }
       }
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "clean": "node -e \"require('node:fs').rmSync('out', { recursive: true, force: true })\"",
+    "compile": "npm run clean && tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test": "npm run compile && node --test \"out/test/*.test.js\"",
-    "package:vsix": "vsce package --no-dependencies --out ai-dev-assistant-0.1.0.vsix",
+    "package:vsix": "vsce package --out ai-dev-assistant-0.1.0.vsix",
     "verify": "npm test && npm run package:vsix"
   },
   "devDependencies": {
@@ -84,5 +149,11 @@
     "@types/vscode": "1.137.0",
     "@vscode/vsce": "3.9.2",
     "typescript": "7.0.2"
-  }
+  },
+  "dependencies": {
+    "@huggingface/tokenizers": "0.2.0",
+    "mongodb": "6.21.0",
+    "onnxruntime-web": "1.29.0"
+  },
+  "icon": "media/ai-dev-assistant-icon.png"
 }
