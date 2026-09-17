@@ -123,7 +123,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
         if (modifiedCount === 0) {
           await vscode.window.showInformationMessage(
-            'Nenhuma memória inativa encontrada.',
+            'Nenhuma memória inativa pôde ser reativada. Pode já existir uma memória ativa equivalente.',
           );
           return;
         }
