@@ -1,48 +1,113 @@
-# AI Dev Assistant — extensão VS Code
+﻿# AI Dev Assistant
 
-Esta extensão distribui o Custom Agent nativo **AI Dev Assistant** e duas tools locais de
-memória. Ela não cria interface própria, backend, configuração de modelo ou provider de
-IA.
+## Autor
 
-## Desenvolvimento
+**Paulo Dantas**
 
-Requer Node.js 22 e VS Code 1.137 ou superior.
+Criador e desenvolvedor do **AI Dev Assistant**.
 
-```powershell
-npm ci
-npm test
-npm run package:vsix
-```
+## O que é a ferramenta
 
-Abra a raiz no VS Code, pressione `F5` e selecione **AI Dev Assistant** no Copilot Chat.
-O GitHub Copilot e o model picker nativo controlam a IA. O agente mantém as ferramentas
-nativas para pesquisar, ler, editar, executar terminal, build e testes em todo o
-workspace.
+O **AI Dev Assistant** é uma extensão para Visual Studio Code que adiciona um **Custom Agent ao GitHub Copilot**.
 
-A memória ativa fica no MongoDB local, com URI padrão `mongodb://127.0.0.1:27017` e
-database `ai_dev_assistant`; ambos são configuráveis nas Settings do VS Code. O JSON em
-`globalStorageUri` é apenas fonte histórica para a migração idempotente. O pacote pode ser instalado
-com `code --install-extension .\ai-dev-assistant-0.1.0.vsix`. Consulte
-`../docs/operations.md` para o roteiro completo.
+A ferramenta acrescenta ao Copilot uma **memória técnica local**, permitindo localizar e reutilizar soluções técnicas já utilizadas anteriormente.
+
+O objetivo é evitar que problemas semelhantes precisem ser resolvidos do zero a cada nova solicitação.
+
+O **GitHub Copilot continua sendo a inteligência artificial generativa**. O AI Dev Assistant complementa o Copilot com memória local, busca exata, busca semântica e reutilização de conhecimento.
+
+## Como funciona
+
+Quando o usuário seleciona o **AI Dev Assistant** no GitHub Copilot e faz uma solicitação:
+
+1. O AI Dev Assistant recebe a solicitação.
+2. Consulta primeiro a memória técnica local.
+3. Procura uma correspondência exata.
+4. Se necessário, realiza uma busca semântica local.
+5. A memória classifica o resultado como **FULL**, **PARTIAL** ou **NONE**.
+6. O GitHub Copilot continua normalmente a análise da tarefa.
+7. O Copilot pode pesquisar o workspace, ler e alterar arquivos, executar terminal, build e testes.
+8. A resposta final pode ser registrada.
+9. Conhecimento técnico reutilizável pode ser armazenado para futuras solicitações.
+
+### Fluxo resumido
+
+**Usuário → AI Dev Assistant → Memória local → GitHub Copilot → Solução final → Conhecimento reutilizável**
+
+## O que significam FULL, PARTIAL e NONE
+
+### FULL
+
+Existe uma solução reutilizável e tecnicamente compatível com a solicitação atual.
+
+### PARTIAL
+
+Existe conhecimento relacionado que pode ajudar, mas a solução pode precisar de adaptação.
+
+### NONE
+
+Não foi encontrado conhecimento suficientemente relacionado. O GitHub Copilot continua normalmente a análise e a produção da nova solução.
+
+## Integração com o GitHub Copilot
+
+O AI Dev Assistant **não substitui o GitHub Copilot** e não restringe suas ferramentas nativas.
+
+O Copilot continua podendo:
+
+- pesquisar arquivos em todo o workspace;
+- localizar arquivos que não estão abertos;
+- ler e alterar código;
+- criar e editar múltiplos arquivos;
+- executar comandos no terminal;
+- executar builds;
+- executar testes;
+- analisar erros;
+- usar o modelo escolhido pelo usuário no model picker nativo.
+
+O AI Dev Assistant adiciona a camada de memória técnica local.
+
+## Memória técnica local
+
+A memória operacional utiliza **MongoDB local**.
+
+Configuração padrão:
+
+- **MongoDB URI:** `mongodb://127.0.0.1:27017`
+- **Database:** `ai_dev_assistant`
+
+A memória permanece no ambiente local do usuário.
+
+## Busca semântica local
+
+Quando uma busca exata não encontra uma solução, o AI Dev Assistant pode realizar busca semântica local.
+
+Essa busca utiliza um modelo **MiniLM** executado localmente através de **ONNX**.
+
+O modelo de embeddings é carregado somente quando necessário.
 
 ## Captura automática de interações
 
-Agent Hooks são Preview. **AI Dev Assistant: Enable Automatic Interaction Capture**
-prepara somente launchers privados e detecta em runtime se
-`chat.useCustomAgentHooks` está registrada antes de tentar ativá-la. Quando a setting não
-existe no build instalado, o comando não falha e não cria hook global; o hook permanece
-declarado no frontmatter do AI Dev Assistant, portanto não captura prompts do Agent
-padrão nem de outros Custom Agents.
+As interações realizadas através do Custom Agent podem ser capturadas automaticamente.
 
-## Privacidade e armazenamento
+O processo relaciona a solicitação do usuário com a resposta final do GitHub Copilot e permite que conhecimento técnico reutilizável seja promovido para a memória local.
 
-Por padrão, o MongoDB **local** em `mongodb://127.0.0.1:27017`, database
-`ai_dev_assistant`, pode armazenar perguntas técnicas, respostas capturadas, contexto
-técnico do workspace, metadados de sessão, memórias reutilizáveis e embeddings numéricos
-das memórias. O AI Dev Assistant não envia essa base MongoDB para um servidor próprio e
-produz embeddings localmente.
+## Privacidade
 
-Armazenamento local não torna o GitHub Copilot local: a conversa continua sendo
-processada pelo serviço GitHub Copilot conforme suas políticas. A extensão não possui
-chamadas próprias para OpenAI, Anthropic ou Groq. Prompts sensíveis detectados não são
-persistidos em texto bruto. Agent Hooks são recursos Preview.
+A memória do AI Dev Assistant é armazenada localmente.
+
+A extensão não possui servidor próprio de memória e não utiliza API key própria de OpenAI, Anthropic ou Groq.
+
+O GitHub Copilot continua operando de acordo com seus próprios serviços, políticas e permissões.
+
+## Requisitos
+
+- Visual Studio Code 1.137 ou superior
+- GitHub Copilot
+- suporte a Agent Mode e Custom Agents
+- MongoDB local em execução
+
+## Autor
+
+**Paulo Dantas**
+
+Criador e desenvolvedor do **AI Dev Assistant**.
