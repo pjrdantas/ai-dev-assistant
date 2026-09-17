@@ -125,48 +125,118 @@ export class MongoMemoryStore implements LocalMemoryStore {
   }
 
   public async reactivateAllInvalidated(): Promise<number> {
-    const timestamp = this.now();
-    const result = await (await this.memories()).updateMany(
-      {
+    const collection = await this.memories();
+    const documents = await collection
+      .find({
         active: false,
         invalidatedAt: { $exists: true },
-      },
-      {
-        $set: {
-          active: true,
-          updatedAt: timestamp,
-        },
-        $unset: {
-          invalidatedAt: '',
-        },
-      },
-    );
+      })
+      .toArray();
 
-    return result.modifiedCount;
+    let reactivated = 0;
+
+    for (const document of documents) {
+      const duplicate = await collection.findOne({
+        _id: { $ne: document._id },
+        normalizedPrompt: document.normalizedPrompt,
+        contextKey: document.contextKey,
+        active: true,
+      });
+
+      if (duplicate) {
+        continue;
+      }
+
+      const result = await collection.updateOne(
+        {
+          _id: document._id,
+          active: false,
+        },
+        {
+          $set: {
+            active: true,
+            updatedAt: this.now(),
+          },
+          $unset: {
+            invalidatedAt: '',
+          },
+        },
+      );
+
+      reactivated += result.modifiedCount;
+    }
+
+    return reactivated;
   }
 
   public async reactivateAll(): Promise<number> {
-    const timestamp = this.now();
-    const result = await (await this.memories()).updateMany(
-      { active: false },
-      {
-        $set: {
-          active: true,
-          updatedAt: timestamp,
-        },
-        $unset: {
-          invalidatedAt: '',
-        },
-      },
-    );
+    const collection = await this.memories();
+    const documents = await collection
+      .find({ active: false })
+      .toArray();
 
-    return result.modifiedCount;
+    let reactivated = 0;
+
+    for (const document of documents) {
+      const duplicate = await collection.findOne({
+        _id: { $ne: document._id },
+        normalizedPrompt: document.normalizedPrompt,
+        contextKey: document.contextKey,
+        active: true,
+      });
+
+      if (duplicate) {
+        continue;
+      }
+
+      const result = await collection.updateOne(
+        {
+          _id: document._id,
+          active: false,
+        },
+        {
+          $set: {
+            active: true,
+            updatedAt: this.now(),
+          },
+          $unset: {
+            invalidatedAt: '',
+          },
+        },
+      );
+
+      reactivated += result.modifiedCount;
+    }
+
+    return reactivated;
   }
 
   public async reactivate(id: string): Promise<boolean> {
-    const result = await (await this.memories()).updateOne(
+    const collection = await this.memories();
+
+    const document = await collection.findOne({
+      _id: id,
+      active: false,
+    });
+
+    if (!document) {
+      return false;
+    }
+
+    const duplicate = await collection.findOne({
+      _id: { $ne: document._id },
+      normalizedPrompt: document.normalizedPrompt,
+      contextKey: document.contextKey,
+      active: true,
+    });
+
+    if (duplicate) {
+      return false;
+    }
+
+    const result = await collection.updateOne(
       {
-        _id: id,
+        _id: document._id,
         active: false,
       },
       {

@@ -92,7 +92,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
         if (modifiedCount === 0) {
           await vscode.window.showInformationMessage(
-            'Nenhuma memória invalidada encontrada.',
+            'Nenhuma memória invalidada pôde ser reativada. Pode já existir uma memória ativa equivalente.',
           );
           return;
         }
@@ -167,7 +167,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
         if (!reactivated) {
           await vscode.window.showInformationMessage(
-            'A memória selecionada já estava ativa ou não foi encontrada.',
+            'A memória selecionada não pôde ser reativada. Ela pode já estar ativa, não existir mais ou possuir uma memória ativa equivalente.',
           );
           return;
         }

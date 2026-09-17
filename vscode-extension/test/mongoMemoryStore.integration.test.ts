@@ -218,6 +218,209 @@ test('MongoDB real: gerencia ativacao e desativacao de memorias sem apagar dados
   }
 });
 
+test('MongoDB real: reativacao em lote ignora memoria duplicada que ja possui equivalente ativa', async (t) => {
+  const connection = new MongoConnectionManager({
+    uri: 'mongodb://127.0.0.1:27017',
+    database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}`,
+  });
+
+  try {
+    try {
+      await connection.database();
+    } catch (error) {
+      if (error instanceof MongoMemoryUnavailableError) {
+        t.skip('MongoDB local indisponivel');
+        return;
+      }
+
+      throw error;
+    }
+
+    const store = new MongoMemoryStore(connection);
+
+    const oldMemory = await store.save(
+      'Pergunta duplicada',
+      'pergunta duplicada',
+      context,
+      'Resposta antiga',
+      [1, 0],
+    );
+
+    assert.equal(await store.invalidate(oldMemory.id), true);
+
+    await store.save(
+      'Pergunta duplicada',
+      'pergunta duplicada',
+      context,
+      'Resposta atual',
+      [1, 0],
+    );
+
+    const before = await store.statistics();
+
+    assert.equal(before.total, 2);
+    assert.equal(before.active, 1);
+    assert.equal(before.invalidated, 1);
+
+    const reactivated = await store.reactivateAllInvalidated();
+
+    assert.equal(
+      reactivated,
+      0,
+      'a memoria invalidada duplicada deve permanecer inativa',
+    );
+
+    const after = await store.statistics();
+
+    assert.equal(after.total, 2);
+    assert.equal(after.active, 1);
+    assert.equal(after.invalidated, 1);
+  } finally {
+    try {
+      await (await connection.database()).dropDatabase();
+    } catch {
+      /* no database to clean */
+    }
+
+    await connection.close();
+  }
+});
+
+test('MongoDB real: reativacao individual ignora memoria duplicada que ja possui equivalente ativa', async (t) => {
+  const connection = new MongoConnectionManager({
+    uri: 'mongodb://127.0.0.1:27017',
+    database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}`,
+  });
+
+  try {
+    try {
+      await connection.database();
+    } catch (error) {
+      if (error instanceof MongoMemoryUnavailableError) {
+        t.skip('MongoDB local indisponivel');
+        return;
+      }
+
+      throw error;
+    }
+
+    const store = new MongoMemoryStore(connection);
+
+    const oldMemory = await store.save(
+      'Pergunta individual duplicada',
+      'pergunta individual duplicada',
+      context,
+      'Resposta antiga',
+      [1, 0],
+    );
+
+    assert.equal(await store.invalidate(oldMemory.id), true);
+
+    await store.save(
+      'Pergunta individual duplicada',
+      'pergunta individual duplicada',
+      context,
+      'Resposta atual',
+      [1, 0],
+    );
+
+    const reactivated = await store.reactivate(oldMemory.id);
+
+    assert.equal(
+      reactivated,
+      false,
+      'a memoria duplicada nao deve ser reativada',
+    );
+
+    const after = await store.statistics();
+
+    assert.equal(after.total, 2);
+    assert.equal(after.active, 1);
+    assert.equal(after.invalidated, 1);
+  } finally {
+    try {
+      await (await connection.database()).dropDatabase();
+    } catch {
+      /* no database to clean */
+    }
+
+    await connection.close();
+  }
+});
+
+test('MongoDB real: reativacao de todas as memorias ignora duplicada que ja possui equivalente ativa', async (t) => {
+  const connection = new MongoConnectionManager({
+    uri: 'mongodb://127.0.0.1:27017',
+    database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}`,
+  });
+
+  try {
+    let database;
+
+    try {
+      database = await connection.database();
+    } catch (error) {
+      if (error instanceof MongoMemoryUnavailableError) {
+        t.skip('MongoDB local indisponivel');
+        return;
+      }
+
+      throw error;
+    }
+
+    const store = new MongoMemoryStore(connection);
+
+    const oldMemory = await store.save(
+      'Pergunta duplicada reactivate all',
+      'pergunta duplicada reactivate all',
+      context,
+      'Resposta antiga',
+      [1, 0],
+    );
+
+    assert.equal(await store.invalidate(oldMemory.id), true);
+
+    await store.save(
+      'Pergunta duplicada reactivate all',
+      'pergunta duplicada reactivate all',
+      context,
+      'Resposta atual',
+      [1, 0],
+    );
+
+    await database.collection('memories').updateOne(
+      { _id: oldMemory.id as never },
+      {
+        $unset: {
+          invalidatedAt: '',
+        },
+      },
+    );
+
+    const reactivated = await store.reactivateAll();
+
+    assert.equal(
+      reactivated,
+      0,
+      'a memoria inativa duplicada deve permanecer inativa',
+    );
+
+    const after = await store.statistics();
+
+    assert.equal(after.total, 2);
+    assert.equal(after.active, 1);
+    assert.equal(after.invalidated, 1);
+  } finally {
+    try {
+      await (await connection.database()).dropDatabase();
+    } catch {
+      /* no database to clean */
+    }
+
+    await connection.close();
+  }
+});
+
 test('remove apenas o prefixo interno da tool', () => {
   assert.equal(stripToolReference(`'${SAVE_MEMORY_TOOL}' este projeto utiliza Maven e possui um pom.xml`, SAVE_MEMORY_TOOL), 'este projeto utiliza Maven e possui um pom.xml');
   assert.equal(stripToolReference(`'${SEARCH_MEMORY_TOOL}' procure conhecimento relacionado ao Maven`, SEARCH_MEMORY_TOOL), 'procure conhecimento relacionado ao Maven');
