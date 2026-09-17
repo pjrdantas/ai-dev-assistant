@@ -108,7 +108,92 @@ export class MongoMemoryStore implements LocalMemoryStore {
 
   public async delete(id: string): Promise<boolean> { return (await (await this.memories()).deleteOne({ _id: id })).deletedCount === 1; }
 
-  public async clear(): Promise<void> { await (await this.memories()).updateMany({ active: true }, { $set: { active: false, invalidatedAt: this.now(), updatedAt: this.now() } }); }
+  public async deactivateAll(): Promise<number> {
+    const timestamp = this.now();
+    const result = await (await this.memories()).updateMany(
+      { active: true },
+      {
+        $set: {
+          active: false,
+          invalidatedAt: timestamp,
+          updatedAt: timestamp,
+        },
+      },
+    );
+
+    return result.modifiedCount;
+  }
+
+  public async reactivateAllInvalidated(): Promise<number> {
+    const timestamp = this.now();
+    const result = await (await this.memories()).updateMany(
+      {
+        active: false,
+        invalidatedAt: { $exists: true },
+      },
+      {
+        $set: {
+          active: true,
+          updatedAt: timestamp,
+        },
+        $unset: {
+          invalidatedAt: '',
+        },
+      },
+    );
+
+    return result.modifiedCount;
+  }
+
+  public async reactivateAll(): Promise<number> {
+    const timestamp = this.now();
+    const result = await (await this.memories()).updateMany(
+      { active: false },
+      {
+        $set: {
+          active: true,
+          updatedAt: timestamp,
+        },
+        $unset: {
+          invalidatedAt: '',
+        },
+      },
+    );
+
+    return result.modifiedCount;
+  }
+
+  public async reactivate(id: string): Promise<boolean> {
+    const result = await (await this.memories()).updateOne(
+      {
+        _id: id,
+        active: false,
+      },
+      {
+        $set: {
+          active: true,
+          updatedAt: this.now(),
+        },
+        $unset: {
+          invalidatedAt: '',
+        },
+      },
+    );
+
+    return result.modifiedCount === 1;
+  }
+
+  public async listInactive(): Promise<readonly LocalKnowledge[]> {
+    const documents = await (await this.memories())
+      .find({ active: false })
+      .toArray();
+
+    return documents.map(mapDocument);
+  }
+
+  public async clear(): Promise<void> {
+    await this.deactivateAll();
+  }
 
   public async statistics(): Promise<MongoMemoryStatistics> {
     const collection = await this.memories();

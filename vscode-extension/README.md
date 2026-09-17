@@ -77,6 +77,26 @@ Configuração padrão:
 
 A memória permanece no ambiente local do usuário.
 
+## Gerenciamento da memória
+
+O AI Dev Assistant permite ativar e desativar memórias sem apagar fisicamente os dados armazenados no MongoDB.
+
+Os comandos estão disponíveis na Command Palette do Visual Studio Code:
+
+- **AI Dev Assistant: Deactivate All Memories**
+  Desativa todas as memórias atualmente ativas. As informações permanecem armazenadas no MongoDB e podem ser reativadas posteriormente.
+
+- **AI Dev Assistant: Reactivate All Invalidated Memories**
+  Reativa somente as memórias que foram explicitamente invalidadas e possuem registro de invalidação.
+
+- **AI Dev Assistant: Reactivate Memory**
+  Exibe as memórias inativas e permite selecionar uma memória específica para reativação.
+
+- **AI Dev Assistant: Reactivate All Memories**
+  Reativa todas as memórias inativas, independentemente do motivo pelo qual foram desativadas.
+
+A desativação ou reativação não altera o conteúdo original da memória, incluindo solicitação, resposta, contexto técnico e embedding.
+
 ## Busca semântica local
 
 Quando uma busca exata não encontra uma solução, o AI Dev Assistant pode realizar busca semântica local.

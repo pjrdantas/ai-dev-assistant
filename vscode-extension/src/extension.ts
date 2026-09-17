@@ -45,11 +45,140 @@ export function activate(context: vscode.ExtensionContext): void {
         await vscode.window.showInformationMessage(`Memória MongoDB: ${stats.active} ativa(s), ${stats.invalidated} invalidada(s), schema ${stats.schemaVersion}.`);
       } catch (error) { await vscode.window.showWarningMessage(`Memória MongoDB indisponível: ${message(error)}`); }
     }),
-    vscode.commands.registerCommand('aiDevAssistant.clearLocalMemory', async () => {
-      const choice = await vscode.window.showWarningMessage('Apagar toda a memória local do AI Dev Assistant?', { modal: true }, 'Apagar');
-      if (choice === 'Apagar') {
-        try { await memory.clear(); await vscode.window.showInformationMessage('Memórias MongoDB inativadas. O histórico de interações foi preservado.'); }
-        catch (error) { await vscode.window.showWarningMessage(`Memória MongoDB indisponível: ${message(error)}`); }
+    vscode.commands.registerCommand('aiDevAssistant.deactivateAllMemories', async () => {
+      const choice = await vscode.window.showWarningMessage(
+        'Desativar todas as memórias do AI Dev Assistant?',
+        { modal: true },
+        'Desativar',
+      );
+
+      if (choice !== 'Desativar') {
+        return;
+      }
+
+      try {
+        const modifiedCount = await memory.deactivateAll();
+
+        if (modifiedCount === 0) {
+          await vscode.window.showInformationMessage(
+            'Nenhuma memória ativa encontrada.',
+          );
+          return;
+        }
+
+        await vscode.window.showInformationMessage(
+          `${modifiedCount} memória(s) desativada(s). Nenhum dado foi apagado.`,
+        );
+      } catch (error) {
+        await vscode.window.showWarningMessage(
+          `Memória MongoDB indisponível: ${message(error)}`,
+        );
+      }
+    }),
+
+    vscode.commands.registerCommand('aiDevAssistant.reactivateAllInvalidatedMemories', async () => {
+      const choice = await vscode.window.showWarningMessage(
+        'Reativar todas as memórias invalidadas do AI Dev Assistant?',
+        { modal: true },
+        'Reativar',
+      );
+
+      if (choice !== 'Reativar') {
+        return;
+      }
+
+      try {
+        const modifiedCount = await memory.reactivateAllInvalidated();
+
+        if (modifiedCount === 0) {
+          await vscode.window.showInformationMessage(
+            'Nenhuma memória invalidada encontrada.',
+          );
+          return;
+        }
+
+        await vscode.window.showInformationMessage(
+          `${modifiedCount} memória(s) invalidada(s) reativada(s).`,
+        );
+      } catch (error) {
+        await vscode.window.showWarningMessage(
+          `Memória MongoDB indisponível: ${message(error)}`,
+        );
+      }
+    }),
+
+    vscode.commands.registerCommand('aiDevAssistant.reactivateAllMemories', async () => {
+      const choice = await vscode.window.showWarningMessage(
+        'Reativar todas as memórias inativas do AI Dev Assistant?',
+        { modal: true },
+        'Reativar',
+      );
+
+      if (choice !== 'Reativar') {
+        return;
+      }
+
+      try {
+        const modifiedCount = await memory.reactivateAll();
+
+        if (modifiedCount === 0) {
+          await vscode.window.showInformationMessage(
+            'Nenhuma memória inativa encontrada.',
+          );
+          return;
+        }
+
+        await vscode.window.showInformationMessage(
+          `${modifiedCount} memória(s) reativada(s).`,
+        );
+      } catch (error) {
+        await vscode.window.showWarningMessage(
+          `Memória MongoDB indisponível: ${message(error)}`,
+        );
+      }
+    }),
+    vscode.commands.registerCommand('aiDevAssistant.reactivateMemory', async () => {
+      try {
+        const inactiveMemories = await memory.listInactive();
+
+        if (inactiveMemories.length === 0) {
+          await vscode.window.showInformationMessage(
+            'Nenhuma memória inativa encontrada.',
+          );
+          return;
+        }
+
+        const items = inactiveMemories.map((entry) => ({
+          label: entry.originalRequest.replace(/\s+/g, ' ').trim(),
+          description: `ID: ${entry.id}`,
+          memoryId: entry.id,
+        }));
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: 'Selecione a memória que deseja reativar',
+          matchOnDescription: true,
+        });
+
+        if (!selected) {
+          return;
+        }
+
+        const reactivated = await memory.reactivate(selected.memoryId);
+
+        if (!reactivated) {
+          await vscode.window.showInformationMessage(
+            'A memória selecionada já estava ativa ou não foi encontrada.',
+          );
+          return;
+        }
+
+        await vscode.window.showInformationMessage(
+          `Memória reativada: ${selected.label}`,
+        );
+      } catch (error) {
+        await vscode.window.showWarningMessage(
+          `Memória MongoDB indisponível: ${message(error)}`,
+        );
       }
     }),
     vscode.commands.registerCommand('aiDevAssistant.mongodbStatus', async () => {
