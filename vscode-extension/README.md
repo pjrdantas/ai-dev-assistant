@@ -126,6 +126,14 @@ O GitHub Copilot continua operando de acordo com seus próprios serviços, polí
 - suporte a Agent Mode e Custom Agents
 - MongoDB local em execução
 
+## Licença
+
+O **AI Dev Assistant** é disponibilizado sob a **Apache License 2.0**.
+
+Consulte o arquivo [LICENSE](LICENSE) para os termos completos.
+
+Copyright 2026 Paulo Dantas.
+
 ## Autor
 
 **Paulo Dantas**
