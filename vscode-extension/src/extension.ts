@@ -11,6 +11,7 @@ import { workspaceKey } from './interactionCapture.js';
 import { installAgentScopedHookRunner, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from './interactionHookInstallation.js';
 import { InteractionPromotionService } from './interactionPromotionService.js';
 import { MongoMemoryStore } from './mongoMemoryStore.js';
+import { estimateStoredMemoryTokens } from './tokenEstimation.js';
 import { VscodeProjectContextProvider } from './vscodeProjectContextProvider.js';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -44,6 +45,37 @@ export function activate(context: vscode.ExtensionContext): void {
         const stats = await memory.statistics();
         await vscode.window.showInformationMessage(`Memória MongoDB: ${stats.active} ativa(s), ${stats.invalidated} invalidada(s), schema ${stats.schemaVersion}.`);
       } catch (error) { await vscode.window.showWarningMessage(`Memória MongoDB indisponível: ${message(error)}`); }
+    }),
+    vscode.commands.registerCommand('aiDevAssistant.showStoredMemories', async () => {
+      try {
+        const storedMemories = await memory.listAll();
+        if (storedMemories.length === 0) {
+          await vscode.window.showInformationMessage('Nenhuma memória armazenada.');
+          return;
+        }
+
+        const items = storedMemories.map((entry) => {
+          const usage = estimateStoredMemoryTokens(
+            entry.knowledge.originalRequest,
+            entry.knowledge.response,
+          );
+          return {
+            label: entry.knowledge.originalRequest.replace(/\s+/g, ' ').trim(),
+            description: `${entry.active ? 'Ativa' : 'Inativa'} • ~${formatNumber(usage.total)} tokens`,
+            detail: `Prompt ~${formatNumber(usage.request)} • Resposta ~${formatNumber(usage.response)} • Reusos ${entry.knowledge.reuseCount} • ID ${entry.knowledge.id}`,
+            estimatedTokens: usage.total,
+          };
+        });
+        const totalEstimatedTokens = items.reduce((total, item) => total + item.estimatedTokens, 0);
+
+        await vscode.window.showQuickPick(items, {
+          placeHolder: `${items.length} memória(s) • ~${formatNumber(totalEstimatedTokens)} tokens estimados armazenados. Os valores são estimativas locais, não o consumo exato do GitHub Copilot.`,
+          matchOnDescription: true,
+          matchOnDetail: true,
+        });
+      } catch (error) {
+        await vscode.window.showWarningMessage(`Memória MongoDB indisponível: ${message(error)}`);
+      }
     }),
     vscode.commands.registerCommand('aiDevAssistant.deactivateAllMemories', async () => {
       const choice = await vscode.window.showWarningMessage(
@@ -257,4 +289,5 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 }
 
+function formatNumber(value: number): string { return value.toLocaleString('pt-BR'); }
 function message(error: unknown): string { return error instanceof Error ? error.message : 'erro desconhecido'; }
