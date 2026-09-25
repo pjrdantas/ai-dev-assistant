@@ -30,6 +30,11 @@ export interface MongoMemoryStatistics {
   readonly schemaVersion: number;
 }
 
+export interface StoredMemoryEntry {
+  readonly knowledge: LocalKnowledge;
+  readonly active: boolean;
+}
+
 /** Active MongoDB store. Cosine similarity deliberately remains local. */
 export class MongoMemoryStore implements LocalMemoryStore {
   public constructor(private readonly connection: MongoConnectionManager, private readonly now: () => Date = () => new Date()) {}
@@ -259,6 +264,18 @@ export class MongoMemoryStore implements LocalMemoryStore {
       .toArray();
 
     return documents.map(mapDocument);
+  }
+
+  public async listAll(): Promise<readonly StoredMemoryEntry[]> {
+    const documents = await (await this.memories())
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    return documents.map((document) => ({
+      knowledge: mapDocument(document),
+      active: document.active,
+    }));
   }
 
   public async clear(): Promise<void> {
