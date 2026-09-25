@@ -11,6 +11,7 @@ import { workspaceKey } from './interactionCapture.js';
 import { installAgentScopedHookRunner, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from './interactionHookInstallation.js';
 import { InteractionPromotionService } from './interactionPromotionService.js';
 import { MongoMemoryStore } from './mongoMemoryStore.js';
+import { memoryDisplayTitle } from './memoryDisplay.js';
 import { estimateStoredMemoryTokens } from './tokenEstimation.js';
 import { VscodeProjectContextProvider } from './vscodeProjectContextProvider.js';
 
@@ -60,7 +61,7 @@ export function activate(context: vscode.ExtensionContext): void {
             entry.knowledge.response,
           );
           return {
-            label: entry.knowledge.originalRequest.replace(/\s+/g, ' ').trim(),
+            label: memoryDisplayTitle(entry.knowledge.originalRequest),
             description: `${entry.active ? 'Ativa' : 'Inativa'} • ~${formatNumber(usage.total)} tokens`,
             detail: `Prompt ~${formatNumber(usage.request)} • Resposta ~${formatNumber(usage.response)} • Reusos ${entry.knowledge.reuseCount} • ID ${entry.knowledge.id}`,
             estimatedTokens: usage.total,
@@ -181,7 +182,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
 
         const items = inactiveMemories.map((entry) => ({
-          label: entry.originalRequest.replace(/\s+/g, ' ').trim(),
+          label: memoryDisplayTitle(entry.originalRequest),
           description: `ID: ${entry.id}`,
           memoryId: entry.id,
         }));
