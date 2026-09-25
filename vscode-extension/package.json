@@ -41,6 +41,10 @@
         "title": "AI Dev Assistant: Show Memory Statistics"
       },
       {
+        "command": "aiDevAssistant.showStoredMemories",
+        "title": "AI Dev Assistant: Show Stored Memories"
+      },
+      {
         "command": "aiDevAssistant.deactivateAllMemories",
         "title": "AI Dev Assistant: Deactivate All Memories"
       },
