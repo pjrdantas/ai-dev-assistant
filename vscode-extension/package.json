@@ -2,7 +2,7 @@
   "name": "ai-dev-assistant",
   "displayName": "AI Dev Assistant",
   "description": "Custom Agent para GitHub Copilot com memória técnica local, busca semântica e reutilização de soluções.",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "publisher": "ai-dev-assistant-local",
   "author": {
     "name": "Paulo Dantas"
