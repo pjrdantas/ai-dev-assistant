@@ -26,6 +26,7 @@ test('desinstala somente os artefatos marcados do AI Dev Assistant', async () =>
     await writeFile(foreign, 'preservar', 'utf8');
     assert.equal(await uninstallAgentScopedHookRunner(home), true);
     assert.equal(await readFile(foreign, 'utf8'), 'preservar');
+    await assert.rejects(readFile(installation.mongoConfiguration, 'utf8'), { code: 'ENOENT' });
     assert.equal(await uninstallAgentScopedHookRunner(home), false);
   } finally { await rm(home, { recursive: true, force: true }); }
 });

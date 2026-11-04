@@ -24,9 +24,10 @@ export class MongoConnectionManager {
   private client: MongoClient | undefined;
   private connecting: Promise<Db> | undefined;
   private indexes: Promise<void> | undefined;
+  private configurationUpdate: Promise<void> = Promise.resolve();
 
   public constructor(
-    private readonly configuration: MongoConnectionConfiguration,
+    private configuration: MongoConnectionConfiguration,
     private readonly clientFactory: (uri: string, options: MongoClientOptions) => MongoClient = (uri, options) => new MongoClient(uri, options),
   ) {}
 
@@ -71,6 +72,17 @@ export class MongoConnectionManager {
     this.indexes = undefined;
     await client?.close();
   }
+
+  public async updateConfiguration(configuration: MongoConnectionConfiguration): Promise<void> {
+    const update = this.configurationUpdate.then(async () => {
+      await this.close();
+      this.configuration = configuration;
+    });
+    this.configurationUpdate = update.catch(() => undefined);
+    await update;
+  }
+
+  public currentConfiguration(): MongoConnectionConfiguration { return this.configuration; }
 
   private async connect(): Promise<Db> {
     this.client ??= this.clientFactory(this.configuration.uri, {

@@ -8,19 +8,21 @@ import { migrateJsonMemory } from './jsonMemoryMigration.js';
 import { MongoConnectionManager } from './mongoConnectionManager.js';
 import { MongoInteractionStore } from './mongoInteractionStore.js';
 import { workspaceKey } from './interactionCapture.js';
-import { installAgentScopedHookRunner, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from './interactionHookInstallation.js';
+import { installAgentScopedHookRunner, installationAt, isAgentScopedHookRunnerInstalled, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from './interactionHookInstallation.js';
 import { InteractionPromotionService } from './interactionPromotionService.js';
 import { MongoMemoryStore } from './mongoMemoryStore.js';
 import { memoryDisplayTitle } from './memoryDisplay.js';
 import { estimateStoredMemoryTokens } from './tokenEstimation.js';
 import { VscodeProjectContextProvider } from './vscodeProjectContextProvider.js';
+import { DEFAULT_MONGO_DATABASE, DEFAULT_MONGO_URI, normalizeMongoHookConfiguration, readMongoHookConfiguration } from './mongoHookConfiguration.js';
+import { MongoHookConfigurationCoordinator } from './mongoHookConfigurationCoordinator.js';
 
 export function activate(context: vscode.ExtensionContext): void {
-  const settings = vscode.workspace.getConfiguration('aiDevAssistant.mongodb');
-  const connection = new MongoConnectionManager({
-    uri: settings.get<string>('uri', 'mongodb://127.0.0.1:27017'),
-    database: settings.get<string>('database', 'ai_dev_assistant'),
+  const mongoConfiguration = () => normalizeMongoHookConfiguration({
+    uri: vscode.workspace.getConfiguration('aiDevAssistant.mongodb').get<string>('uri', DEFAULT_MONGO_URI),
+    database: vscode.workspace.getConfiguration('aiDevAssistant.mongodb').get<string>('database', DEFAULT_MONGO_DATABASE),
   });
+  const connection = new MongoConnectionManager(mongoConfiguration());
   const memory = new MongoMemoryStore(connection);
   const interactions = new MongoInteractionStore(connection);
   const embeddings = new OnnxLocalEmbeddingProvider(
@@ -38,6 +40,18 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   );
   const promotions = new InteractionPromotionService(interactions, service);
+  const configurationCoordinator = new MongoHookConfigurationCoordinator({
+    readConfiguration: mongoConfiguration,
+    getActiveConfiguration: () => connection.currentConfiguration(),
+    isInstalled: () => isAgentScopedHookRunnerInstalled(homedir()),
+    readInstalledConfiguration: () => readMongoHookConfiguration(installationAt(homedir()).mongoConfiguration),
+    updateConnection: (configuration) => connection.updateConfiguration(configuration),
+    syncInstalledHook: async (configuration) => {
+      const runner = vscode.Uri.joinPath(context.extensionUri, 'out', 'src', 'interactionHookRunner.js').fsPath;
+      await installAgentScopedHookRunner(homedir(), process.execPath, runner, configuration);
+    },
+    disableInstalledHook: () => uninstallAgentScopedHookRunner(homedir()),
+  });
   registerMemoryTools(context, service, () => promotions.promotePending());
   context.subscriptions.push(
     output,
@@ -256,18 +270,7 @@ export function activate(context: vscode.ExtensionContext): void {
   if (choice !== 'Habilitar') return;
 
   try {
-    const runner = vscode.Uri.joinPath(
-      context.extensionUri,
-      'out',
-      'src',
-      'interactionHookRunner.js',
-    ).fsPath;
-
-    await installAgentScopedHookRunner(
-      homedir(),
-      process.execPath,
-      runner,
-    );
+    await configurationCoordinator.enable();
 
     await removeLegacyGlobalInteractionHook(homedir());
 
@@ -280,14 +283,20 @@ export function activate(context: vscode.ExtensionContext): void {
     );
   }
 }),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event.affectsConfiguration('aiDevAssistant.mongodb')) return;
+      void configurationCoordinator.reconcile().catch((error) => void vscode.window.showWarningMessage(`Não foi possível atualizar a configuração MongoDB: ${message(error)}`));
+    }),
     vscode.commands.registerCommand('aiDevAssistant.disableAutomaticInteractionCapture', async () => {
       try {
-        const [removed, legacyRemoved] = await Promise.all([uninstallAgentScopedHookRunner(homedir()), removeLegacyGlobalInteractionHook(homedir())]);
+        const removed = await configurationCoordinator.disable();
+        const legacyRemoved = await removeLegacyGlobalInteractionHook(homedir());
         await vscode.window.showInformationMessage(removed || legacyRemoved ? 'Captura automática desabilitada. Somente artefatos do AI Dev Assistant foram removidos.' : 'Não foram encontrados artefatos de captura gerenciados pelo AI Dev Assistant.');
       } catch (error) { await vscode.window.showWarningMessage(`Não foi possível desabilitar a captura automática: ${message(error)}`); }
     }),
     new vscode.Disposable(() => { void connection.close(); }),
   );
+  void configurationCoordinator.reconcile().catch((error) => void vscode.window.showWarningMessage(`Não foi possível reconciliar a configuração MongoDB: ${message(error)}`));
 }
 
 function formatNumber(value: number): string { return value.toLocaleString('pt-BR'); }
