@@ -118,8 +118,8 @@ export class MongoMemoryStore implements LocalMemoryStore {
     validateEmbedding(embedding);
     const timestamp = this.now();
     const document = await (await this.memories()).findOneAndUpdate(
-      { _id: id },
-      { $set: { response, embedding: [...embedding], active: true, updatedAt: timestamp }, $inc: { revision: 1 }, $unset: { invalidatedAt: '' } },
+      { _id: id, active: true },
+      { $set: { response, embedding: [...embedding], updatedAt: timestamp }, $inc: { revision: 1 } },
       { returnDocument: 'after' },
     );
     return document === null ? undefined : mapDocument(document);
@@ -166,23 +166,7 @@ export class MongoMemoryStore implements LocalMemoryStore {
         continue;
       }
 
-      const result = await collection.updateOne(
-        {
-          _id: document._id,
-          active: false,
-        },
-        {
-          $set: {
-            active: true,
-            updatedAt: this.now(),
-          },
-          $unset: {
-            invalidatedAt: '',
-          },
-        },
-      );
-
-      reactivated += result.modifiedCount;
+      if (await this.reactivateDocument(collection, document, true)) reactivated += 1;
     }
 
     return reactivated;
@@ -203,23 +187,7 @@ export class MongoMemoryStore implements LocalMemoryStore {
         continue;
       }
 
-      const result = await collection.updateOne(
-        {
-          _id: document._id,
-          active: false,
-        },
-        {
-          $set: {
-            active: true,
-            updatedAt: this.now(),
-          },
-          $unset: {
-            invalidatedAt: '',
-          },
-        },
-      );
-
-      reactivated += result.modifiedCount;
+      if (await this.reactivateDocument(collection, document, false)) reactivated += 1;
     }
 
     return reactivated;
@@ -243,23 +211,7 @@ export class MongoMemoryStore implements LocalMemoryStore {
       return false;
     }
 
-    const result = await collection.updateOne(
-      {
-        _id: document._id,
-        active: false,
-      },
-      {
-        $set: {
-          active: true,
-          updatedAt: this.now(),
-        },
-        $unset: {
-          invalidatedAt: '',
-        },
-      },
-    );
-
-    return result.modifiedCount === 1;
+    return this.reactivateDocument(collection, document, false);
   }
 
   public async listInactive(): Promise<readonly LocalKnowledge[]> {
@@ -302,6 +254,30 @@ export class MongoMemoryStore implements LocalMemoryStore {
   private async memories(): Promise<Collection<MemoryDocument>> {
     await this.connection.ensureIndexes();
     return (await this.connection.database()).collection<MemoryDocument>('memories');
+  }
+
+  private async reactivateDocument(collection: Collection<MemoryDocument>, document: MemoryDocument, requireInvalidatedAt: boolean): Promise<boolean> {
+    try {
+      const result = await collection.updateOne(
+        {
+          _id: document._id,
+          active: false,
+          normalizedPrompt: document.normalizedPrompt,
+          contextKey: document.contextKey,
+          ...(document.provenance === undefined ? { provenance: { $exists: false } } : { provenance: document.provenance }),
+          ...(document.scope === undefined ? { scope: { $exists: false } } : { scope: document.scope }),
+          ...(document.workspaceKey === undefined ? {} : { workspaceKey: document.workspaceKey }),
+          ...(requireInvalidatedAt ? { invalidatedAt: { $exists: true } } : {}),
+        },
+        { $set: { active: true, updatedAt: this.now() }, $unset: { invalidatedAt: '' } },
+      );
+      return result.modifiedCount === 1;
+    } catch (error) {
+      // The unique active identity index arbitrates a concurrent reactivation/save.
+      // Losing that race means this memory must remain inactive; other Mongo errors stay visible.
+      if (isDuplicateKey(error)) return false;
+      throw error;
+    }
   }
 }
 
