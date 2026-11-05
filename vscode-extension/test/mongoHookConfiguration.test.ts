@@ -68,6 +68,67 @@ test('E3-001: runner captura interação no database temporário configurado', a
   }
 });
 
+test('E3-005: stdin acima do limite encerra a captura sem ecoar conteúdo', async () => {
+  const runner = join(process.cwd(), 'out', 'src', 'interactionHookRunner.js');
+  const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
+    const child = spawn(process.execPath, [runner], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    child.on('error', reject);
+    child.on('close', (code) => resolve({ code, stderr }));
+    child.stdin.end(Buffer.alloc(1 * 1024 * 1024 + 1, 0x78));
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stderr, /interaction capture unavailable/);
+  assert.doesNotMatch(result.stderr, /x{100}/);
+});
+
+test('E3-005: transcript acima do limite marca RESPONSE_UNAVAILABLE sem persistir resposta parcial', async (t) => {
+  const database = `ai_dev_assistant_e3_005_${randomUUID().replaceAll('-', '')}`;
+  const client = new MongoClient(DEFAULT_MONGO_URI, { serverSelectionTimeoutMS: 1_500, connectTimeoutMS: 1_500 });
+  try {
+    await client.connect();
+  } catch {
+    t.skip('MongoDB local indisponível');
+    return;
+  }
+  const home = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-e3-005-'));
+  try {
+    const installation = await installAgentScopedHookRunner(home, 'node', 'runner.js', { uri: DEFAULT_MONGO_URI, database });
+    const transcript = join(home, 'oversized-transcript.json');
+    await writeFile(transcript, Buffer.alloc(4 * 1024 * 1024 + 1, 0x78));
+    const sessionId = 'synthetic-e3-005-session';
+    await client.db(database).collection('interactions').insertOne({
+      interactionId: randomUUID(),
+      sessionId,
+      status: 'PENDING',
+      createdAt: new Date(),
+      originalRequest: 'synthetic E3-005 request',
+    });
+
+    const runner = join(process.cwd(), 'out', 'src', 'interactionHookRunner.js');
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(process.execPath, [runner, '--mongo-config', installation.mongoConfiguration], { stdio: ['pipe', 'pipe', 'pipe'] });
+      let stderr = '';
+      child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+      child.on('error', reject);
+      child.on('close', (code) => code === 0 ? resolve() : reject(new Error(stderr || `runner exit ${code}`)));
+      child.stdin.end(JSON.stringify({ hook_event_name: 'Stop', session_id: sessionId, transcript_path: transcript }));
+    });
+
+    const interaction = await client.db(database).collection('interactions').findOne({ sessionId });
+    assert.equal(interaction?.status, 'RESPONSE_UNAVAILABLE');
+    assert.equal(interaction?.promotionStatus, 'SKIPPED');
+    assert.equal(interaction?.promotionReason, 'TRANSCRIPT_TOO_LARGE');
+    assert.equal('response' in (interaction ?? {}), false);
+  } finally {
+    await client.db(database).dropDatabase();
+    await client.close();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test('E3-001: configuração inválida falha explicitamente sem cair silenciosamente no default', async () => {
   const home = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-e3-001-'));
   try {

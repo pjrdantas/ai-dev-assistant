@@ -1,8 +1,11 @@
 import { MongoClient } from 'mongodb';
+import { readUtf8WithinLimit } from './boundedInput.js';
 
 import { interactionFromUserPrompt, UserPromptSubmitInput } from './interactionCapture.js';
 import { TranscriptResponseExtractor } from './transcriptResponseExtractor.js';
 import { loadMongoHookConfiguration, MongoHookConfigurationError } from './mongoHookConfiguration.js';
+
+export const MAX_STDIN_BYTES = 1 * 1024 * 1024;
 
 interface StopInput { readonly hook_event_name: 'Stop'; readonly session_id?: string; readonly transcript_path?: string; readonly timestamp?: string; }
 
@@ -34,7 +37,9 @@ async function main(): Promise<void> {
   }
 }
 
-function readStdin(): Promise<string> { return new Promise((resolve, reject) => { let data = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (chunk) => { data += chunk; }); process.stdin.on('end', () => resolve(data)); process.stdin.on('error', reject); }); }
+function readStdin(): Promise<string> {
+  return readUtf8WithinLimit(process.stdin, MAX_STDIN_BYTES);
+}
 
 function mongoConfigurationArgument(): string {
   const index = process.argv.indexOf('--mongo-config');
