@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
+import type { Document } from 'mongodb';
 
-import { ProjectContext } from '../src/contracts.js';
+import { ProjectContext, ProjectContextProvider } from '../src/contracts.js';
 import { LocalEmbeddingProvider } from '../src/localEmbeddingProvider.js';
 import { LocalMemoryService } from '../src/localMemoryService.js';
-import { MongoConnectionManager, MongoMemoryUnavailableError } from '../src/mongoConnectionManager.js';
+import { MongoConnectionManager, MongoMemoryUnavailableError, MongoSchemaMigrationRequiredError } from '../src/mongoConnectionManager.js';
 import { MongoMemoryStore } from '../src/mongoMemoryStore.js';
 import { MongoInteractionStore } from '../src/mongoInteractionStore.js';
+import { InteractionPromotionService } from '../src/interactionPromotionService.js';
+import { normalizeWorkspacePath, workspaceKey } from '../src/interactionCapture.js';
 import { stripToolReference } from '../src/toolReferenceUtils.js';
 
 const SEARCH_MEMORY_TOOL = 'ai-dev-assistant_searchMemory';
@@ -38,6 +41,204 @@ test('MongoDB real: save -> exact e candidato semântico Maven/pom.xml', async (
     await interactions.save({ interactionId: 'interaction-test', sessionId: 'session-test', workspaceKey: 'workspace-test', originalRequest: 'Pergunta literal', status: 'PENDING', createdAt: new Date() });
     assert.equal(await interactions.finishLatestPending('session-test', { response: 'Resposta capturada', completedAt: new Date() }), true);
     assert.equal((await interactions.statistics('workspace-test')).completed, 1);
+  } finally {
+    try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
+    await connection.close();
+  }
+});
+
+test('MongoDB real: promoção seleciona somente a origem do workspace atual', async (t) => {
+  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const originA = workspaceKey('C:/workspace-a')!;
+  const originB = workspaceKey('C:/workspace-b')!;
+  try {
+    let database;
+    try { database = await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
+    const interactions = new MongoInteractionStore(connection);
+    const memory = new MongoMemoryStore(connection);
+    const service = new LocalMemoryService(memory, { async generate() { return [1, 0]; } }, { async capture() { return context; }, currentWorkspaceKeys() { return [originA]; } } as ProjectContextProvider & { currentWorkspaceKeys: () => readonly string[] });
+    await interactions.save({ interactionId: 'origin-a', sessionId: 'session-a', workspaceKey: originA, originalRequest: 'pergunta A', response: 'resposta A', status: 'COMPLETED', completedAt: new Date(), createdAt: new Date(), promotionStatus: 'PENDING' });
+    await interactions.save({ interactionId: 'origin-b', sessionId: 'session-b', workspaceKey: originB, originalRequest: 'pergunta B', response: 'resposta B', status: 'COMPLETED', completedAt: new Date(), createdAt: new Date(), promotionStatus: 'PENDING' });
+    await interactions.save({ interactionId: 'without-origin', sessionId: 'session-c', originalRequest: 'pergunta sem origem', response: 'resposta sem origem', status: 'COMPLETED', completedAt: new Date(), createdAt: new Date(), promotionStatus: 'PENDING' });
+
+    await new InteractionPromotionService(interactions, service, () => [originA]).promotePending();
+
+    const promoted = await database.collection('interactions').find({}).sort({ interactionId: 1 }).toArray();
+    assert.equal(promoted.find((entry) => entry.interactionId === 'origin-a')?.promotionStatus, 'PROMOTED');
+    assert.equal(promoted.find((entry) => entry.interactionId === 'origin-b')?.promotionStatus, 'PENDING');
+    assert.equal(promoted.find((entry) => entry.interactionId === 'without-origin')?.promotionStatus, 'PENDING');
+    assert.equal((await database.collection('memories').countDocuments()), 1);
+  } finally {
+    try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
+    await connection.close();
+  }
+});
+
+test('MongoDB real: promoção resolve cwd de subdiretório para a raiz aberta mais específica', async (t) => {
+  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const root = workspaceKey('C:/workspace-a')!;
+  const child = workspaceKey('C:/workspace-a/apps/service')!;
+  try {
+    try { await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
+    const interactions = new MongoInteractionStore(connection);
+    const memory = new MongoMemoryStore(connection);
+    const provider = { async capture() { return context; }, currentWorkspaceKeys() { return [root]; } } as ProjectContextProvider & { currentWorkspaceKeys: () => readonly string[] };
+    const service = new LocalMemoryService(memory, { async generate() { return [1, 0]; } }, provider);
+    await interactions.save({ interactionId: 'subdir-origin', sessionId: 'session-subdir', workspaceKey: child, cwd: 'C:/workspace-a/apps/service/src', originalRequest: 'pergunta da subpasta', response: 'resposta da subpasta', status: 'COMPLETED', createdAt: new Date(), promotionStatus: 'PENDING' });
+
+    const origins = [{ workspaceKey: root, normalizedPath: normalizeWorkspacePath('C:/workspace-a')! }];
+    await new InteractionPromotionService(interactions, service, () => [root], () => origins).promotePending();
+
+    assert.equal((await memory.listAll()).length, 1);
+    assert.equal((await (await connection.database()).collection('interactions').findOne({ interactionId: 'subdir-origin' }))?.promotionStatus, 'PROMOTED');
+  } finally {
+    try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
+    await connection.close();
+  }
+});
+
+test('MongoDB real: promoções iguais de workspaces distintos coexistem e a busca exata respeita a origem', async (t) => {
+  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const originA = workspaceKey('C:/workspace-a')!;
+  const originB = workspaceKey('C:/workspace-b')!;
+  try {
+    let database;
+    try { database = await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
+    const store = new MongoMemoryStore(connection);
+    const provider = { async capture() { return context; }, currentWorkspaceKeys() { return [originA, originB]; } } as ProjectContextProvider & { currentWorkspaceKeys: () => readonly string[] };
+    const service = new LocalMemoryService(store, { async generate() { return [1, 0]; } }, provider);
+
+    await service.save('mesma pergunta técnica', 'Resposta do workspace A', originA);
+    await service.save('mesma pergunta técnica', 'Resposta do workspace B', originB);
+
+    assert.equal((await database.collection('memories').countDocuments({ active: true })), 2);
+    assert.equal((await store.findExact('mesma pergunta técnica', context, { workspaceKey: originA }))?.response, 'Resposta do workspace A');
+    assert.equal((await store.findExact('mesma pergunta técnica', context, { workspaceKey: originB }))?.response, 'Resposta do workspace B');
+  } finally {
+    try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
+    await connection.close();
+  }
+});
+
+test('MongoDB real: promoção não substitui legado sem proveniência e índice novo o mantém coexistente', async (t) => {
+  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const originA = workspaceKey('C:/workspace-a')!;
+  try {
+    let database;
+    try { database = await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
+    const store = new MongoMemoryStore(connection);
+    const legacyId = 'legacy-without-provenance';
+    const timestamp = new Date('2026-01-01T00:00:00.000Z');
+    const memories = database.collection<Document & { _id: string; response: string; active: boolean }>('memories');
+    await memories.insertOne({ _id: legacyId, schemaVersion: 2, originalRequest: 'mesma pergunta técnica', normalizedPrompt: 'mesma pergunta técnica', contextKey: JSON.stringify(context), response: 'Resposta legada', embedding: [1, 0], active: true, createdAt: timestamp, lastUsedAt: timestamp, reuseCount: 0 });
+    const provider = { async capture() { return context; }, currentWorkspaceKeys() { return [originA]; } } as ProjectContextProvider & { currentWorkspaceKeys: () => readonly string[] };
+    const service = new LocalMemoryService(store, { async generate() { return [1, 0]; } }, provider);
+
+    await service.save('mesma pergunta técnica', 'Resposta nova automática', originA);
+
+    assert.equal((await memories.countDocuments({ active: true })), 2);
+    assert.equal((await memories.findOne({ _id: legacyId }))?.response, 'Resposta legada');
+    assert.equal((await store.findExact('mesma pergunta técnica', context, { workspaceKey: originA, includeLegacy: false }))?.response, 'Resposta nova automática');
+  } finally {
+    try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
+    await connection.close();
+  }
+});
+
+test('MongoDB real: memória compartilhada não deduplica promoção automática do workspace', async (t) => {
+  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const origin = workspaceKey('C:/workspace-a')!;
+  try {
+    try { await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
+    const store = new MongoMemoryStore(connection);
+    const provider = { async capture() { return context; }, currentWorkspaceKeys() { return [origin]; } } as ProjectContextProvider & { currentWorkspaceKeys: () => readonly string[] };
+    const service = new LocalMemoryService(store, { async generate() { return [1, 0]; } }, provider);
+
+    const shared = await service.save('pergunta semanticamente equivalente compartilhada', 'Resposta compartilhada');
+    const workspace = await service.save('outra formulação semanticamente equivalente', 'Resposta automática do workspace', origin);
+
+    assert.equal(shared.reusedExistingKnowledge, false);
+    assert.equal(workspace.reusedExistingKnowledge, false);
+    assert.equal((await store.statistics()).active, 2);
+  } finally {
+    try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
+    await connection.close();
+  }
+});
+
+test('MongoDB real: promoção automática não impede gravação manual compartilhada', async (t) => {
+  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const origin = workspaceKey('C:/workspace-a')!;
+  try {
+    try { await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
+    const store = new MongoMemoryStore(connection);
+    const provider = { async capture() { return context; }, currentWorkspaceKeys() { return [origin]; } } as ProjectContextProvider & { currentWorkspaceKeys: () => readonly string[] };
+    const service = new LocalMemoryService(store, { async generate() { return [1, 0]; } }, provider);
+
+    const workspace = await service.save('pergunta automática semanticamente equivalente', 'Resposta do workspace', origin);
+    const shared = await service.save('outra formulação semanticamente equivalente', 'Resposta manual compartilhada');
+
+    assert.equal(workspace.reusedExistingKnowledge, false);
+    assert.equal(shared.reusedExistingKnowledge, false);
+    assert.equal((await store.statistics()).active, 2);
+  } finally {
+    try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
+    await connection.close();
+  }
+});
+
+test('MongoDB real: busca prefere workspace atual antes da memória compartilhada', async (t) => {
+  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const origin = workspaceKey('C:/workspace-a')!;
+  try {
+    try { await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
+    const store = new MongoMemoryStore(connection);
+    await store.save('mesma pergunta', 'mesma pergunta', context, 'Resposta compartilhada', [1, 0]);
+    await store.save('mesma pergunta', 'mesma pergunta', context, 'Resposta do workspace', [1, 0], { provenance: 'AUTO_PROMOTED', scope: 'WORKSPACE', workspaceKey: origin });
+
+    const selected = await store.findExact('mesma pergunta', context, { workspaceKey: origin });
+
+    assert.equal(selected?.response, 'Resposta do workspace');
+  } finally {
+    try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
+    await connection.close();
+  }
+});
+
+test('MongoDB real: busca semântica prefere workspace atual mesmo com compartilhada mais similar', async (t) => {
+  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const origin = workspaceKey('C:/workspace-a')!;
+  try {
+    try { await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
+    const store = new MongoMemoryStore(connection);
+    await store.save('shared', 'shared', context, 'Resposta compartilhada', [1, 0]);
+    await store.save('workspace', 'workspace', context, 'Resposta privada A', [0.95, 0.3122498999], { provenance: 'AUTO_PROMOTED', scope: 'WORKSPACE', workspaceKey: origin });
+    const matches = await store.findSimilar([1, 0], context, { workspaceKey: origin });
+    assert.equal(matches[0]?.knowledge.response, 'Resposta privada A');
+    assert.ok(matches[0]!.similarity < matches[1]!.similarity);
+  } finally {
+    try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
+    await connection.close();
+  }
+});
+
+test('MongoDB real: índice legado bloqueia inicialização sem alterar dados', async (t) => {
+  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  try {
+    let database;
+    try { database = await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
+    const timestamp = new Date('2026-01-01T00:00:00.000Z');
+    const memories = database.collection<Document & { _id: string; response?: string }>('memories');
+    await memories.insertOne({ _id: 'legacy-index-data', schemaVersion: 2, originalRequest: 'legado', normalizedPrompt: 'legado', contextKey: 'ctx', response: 'preservar', embedding: [1, 0], active: true, createdAt: timestamp, lastUsedAt: timestamp, reuseCount: 0 });
+    await memories.createIndex({ normalizedPrompt: 1, contextKey: 1 }, { name: 'memories_active_exact_unique', unique: true, partialFilterExpression: { active: true } });
+
+    await assert.rejects(connection.ensureIndexes(), (error: unknown) => {
+      assert.ok(error instanceof MongoSchemaMigrationRequiredError);
+      assert.match((error as Error).message, /índice legado/);
+      return true;
+    });
+    assert.equal(await memories.countDocuments({ _id: 'legacy-index-data' }), 1);
+    assert.equal((await memories.findOne({ _id: 'legacy-index-data' }))?.response, 'preservar');
   } finally {
     try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
     await connection.close();

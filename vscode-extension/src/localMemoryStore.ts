@@ -4,6 +4,21 @@ import { basename, dirname, join } from 'node:path';
 
 import { ProjectContext } from './contracts.js';
 
+export type MemoryProvenance = 'AUTO_PROMOTED' | 'MANUAL' | 'LEGACY';
+export type MemoryScope = 'WORKSPACE' | 'SHARED' | 'LEGACY_UNSCOPED';
+
+export interface MemoryLookupScope {
+  readonly workspaceKey?: string;
+  readonly includeLegacy?: boolean;
+  readonly deduplication?: MemorySaveOptions;
+}
+
+export interface MemorySaveOptions {
+  readonly provenance: Exclude<MemoryProvenance, 'LEGACY'>;
+  readonly scope: Exclude<MemoryScope, 'LEGACY_UNSCOPED'>;
+  readonly workspaceKey?: string;
+}
+
 const SCHEMA_VERSION = 2;
 export const MAX_CORRUPTION_BACKUPS = 5;
 const DEFAULT_LOCK_TIMEOUT_MS = 1_000;
@@ -29,14 +44,18 @@ export interface LocalKnowledge {
   readonly revision?: number;
   readonly invalidatedAt?: string;
   readonly embedding?: readonly number[];
+  readonly provenance?: MemoryProvenance;
+  readonly scope?: MemoryScope;
+  readonly workspaceKey?: string;
 }
 
 export interface LocalMemoryStore {
-  findExact(normalizedPrompt: string, context: ProjectContext | undefined): Promise<LocalKnowledge | undefined>;
+  findExact(normalizedPrompt: string, context: ProjectContext | undefined, lookup?: MemoryLookupScope): Promise<LocalKnowledge | undefined>;
 
   findSimilar(
     embedding: readonly number[],
     context: ProjectContext | undefined,
+    lookup?: MemoryLookupScope,
   ): Promise<readonly LocalMemoryMatch[]>;
 
   registerReuse(id: string): Promise<LocalKnowledge | undefined>;
@@ -47,6 +66,7 @@ export interface LocalMemoryStore {
     context: ProjectContext | undefined,
     response: string,
     embedding: readonly number[],
+    options?: MemorySaveOptions,
   ): Promise<LocalKnowledge>;
   replace?(id: string, response: string, embedding: readonly number[]): Promise<LocalKnowledge | undefined>;
 }
@@ -85,13 +105,17 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
   public async findExact(
     normalizedPrompt: string,
     context: ProjectContext | undefined,
+    lookup: MemoryLookupScope = {},
   ): Promise<LocalKnowledge | undefined> {
     const contextKey = projectContextKey(context);
     const state = await this.read();
-    const entry = state.entries.find((candidate) =>
+    const entries = state.entries.filter((candidate) =>
       candidate.invalidatedAt === undefined
       && candidate.normalizedPrompt === normalizedPrompt
-      && candidate.contextKey === contextKey);
+      && candidate.contextKey === contextKey
+      && isMemoryAccessible(candidate, lookup)
+      && isDeduplicationMatch(candidate, lookup));
+    const entry = selectPreferredMemory(entries, lookup);
     if (entry === undefined) {
       return undefined;
     }
@@ -104,12 +128,14 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
     context: ProjectContext | undefined,
     response: string,
     embedding: readonly number[],
+    options: MemorySaveOptions = { provenance: 'MANUAL', scope: 'SHARED' },
   ): Promise<LocalKnowledge> {
     return this.serialize(async () => {
       const state = await this.read();
       const contextKey = projectContextKey(context);
       const existing = state.entries.find((candidate) =>
-        candidate.normalizedPrompt === normalizedPrompt && candidate.contextKey === contextKey);
+        candidate.normalizedPrompt === normalizedPrompt && candidate.contextKey === contextKey
+        && sameDeduplicationScope(candidate, options));
       if (existing !== undefined) {
         return this.writeUpdatedReuse(state, existing.id);
       }
@@ -124,6 +150,9 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
         lastUsedAt: timestamp,
         reuseCount: 0,
         embedding: validateEmbedding(embedding),
+        provenance: options.provenance,
+        scope: options.scope,
+        workspaceKey: options.workspaceKey,
       };
       await this.write(state, [...state.entries, entry]);
       return entry;
@@ -133,6 +162,7 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
   public async findSimilar(
     embedding: readonly number[],
     context: ProjectContext | undefined,
+    lookup: MemoryLookupScope = {},
   ): Promise<readonly LocalMemoryMatch[]> {
     const query = validateEmbedding(embedding);
     const state = await this.read();
@@ -142,6 +172,7 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
       if (entry.invalidatedAt !== undefined || entry.embedding === undefined || entry.embedding.length !== query.length) {
         continue;
       }
+      if (!isMemoryAccessible(entry, lookup) || !isDeduplicationMatch(entry, lookup)) continue;
       const similarity = cosineSimilarity(query, entry.embedding);
       matches.push({
         knowledge: entry,
@@ -149,7 +180,9 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
         contextCompatible: entry.contextKey === contextKey,
       });
     }
-    return matches.sort((left, right) => right.similarity - left.similarity);
+    return matches.sort((left, right) => memoryPriority(right.knowledge, lookup) - memoryPriority(left.knowledge, lookup)
+      || right.similarity - left.similarity
+      || left.knowledge.id.localeCompare(right.knowledge.id));
   }
 
   public async registerReuse(id: string): Promise<LocalKnowledge | undefined> {
@@ -340,6 +373,43 @@ export function projectContextKey(context: ProjectContext | undefined): string {
     frameworks: normalizeTechnologies(context.frameworks),
     languages: normalizeTechnologies(context.languages),
   });
+}
+
+export function memoryProvenance(entry: Pick<LocalKnowledge, 'provenance'>): MemoryProvenance {
+  return entry.provenance ?? 'LEGACY';
+}
+
+export function memoryScope(entry: Pick<LocalKnowledge, 'scope'>): MemoryScope {
+  return entry.scope ?? 'LEGACY_UNSCOPED';
+}
+
+export function isMemoryAccessible(entry: Pick<LocalKnowledge, 'provenance' | 'scope' | 'workspaceKey'>, lookup: MemoryLookupScope): boolean {
+  const provenance = memoryProvenance(entry);
+  const scope = memoryScope(entry);
+  if (provenance === 'LEGACY') return lookup.includeLegacy !== false;
+  if (scope === 'SHARED') return true;
+  return scope === 'WORKSPACE' && lookup.workspaceKey !== undefined && entry.workspaceKey === lookup.workspaceKey;
+}
+
+export function isDeduplicationMatch(entry: Pick<LocalKnowledge, 'provenance' | 'scope' | 'workspaceKey'>, lookup: MemoryLookupScope): boolean {
+  return lookup.deduplication === undefined || sameDeduplicationScope(entry, lookup.deduplication);
+}
+
+export function sameDeduplicationScope(entry: Pick<LocalKnowledge, 'provenance' | 'scope' | 'workspaceKey'>, options: MemorySaveOptions): boolean {
+  return memoryProvenance(entry) === options.provenance
+    && memoryScope(entry) === options.scope
+    && entry.workspaceKey === options.workspaceKey;
+}
+
+function selectPreferredMemory(entries: readonly LocalKnowledge[], lookup: MemoryLookupScope): LocalKnowledge | undefined {
+  return [...entries].sort((left, right) => memoryPriority(right, lookup) - memoryPriority(left, lookup)
+    || left.id.localeCompare(right.id))[0];
+}
+
+function memoryPriority(entry: Pick<LocalKnowledge, 'provenance' | 'scope' | 'workspaceKey'>, lookup: MemoryLookupScope): number {
+  if (lookup.workspaceKey !== undefined && memoryScope(entry) === 'WORKSPACE' && entry.workspaceKey === lookup.workspaceKey) return 2;
+  if (memoryScope(entry) === 'SHARED') return 1;
+  return 0;
 }
 
 function normalizeTechnologies(technologies: readonly { readonly name: string; readonly version?: string }[]): readonly object[] {

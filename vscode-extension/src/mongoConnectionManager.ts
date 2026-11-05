@@ -20,6 +20,13 @@ export class MongoMemoryUnavailableError extends Error {
   }
 }
 
+export class MongoSchemaMigrationRequiredError extends Error {
+  public constructor() {
+    super('O banco de memórias possui o índice legado. Execute a migração planejada antes de ativar o novo contrato de proveniência.');
+    this.name = 'MongoSchemaMigrationRequiredError';
+  }
+}
+
 export class MongoConnectionManager {
   private client: MongoClient | undefined;
   private connecting: Promise<Db> | undefined;
@@ -96,6 +103,22 @@ export class MongoConnectionManager {
 
   private async createIndexes(): Promise<void> {
     const db = await this.database();
+    let existing;
+    try {
+      const memories = db.collection('memories');
+      if (typeof memories.listIndexes !== 'function') {
+        existing = [];
+      } else {
+        existing = await memories.listIndexes().toArray();
+      }
+    } catch (error) {
+      if (!isMissingNamespace(error)) throw error;
+      existing = [];
+    }
+    const legacyExact = existing.find((index) => index.name === 'memories_active_exact_unique');
+    const legacyKey = legacyExact?.key !== undefined
+      && JSON.stringify(legacyExact.key) === JSON.stringify({ normalizedPrompt: 1, contextKey: 1 });
+    if (legacyKey) throw new MongoSchemaMigrationRequiredError();
     await Promise.all([
       db.collection('memories').createIndexes([
         { key: { contextKey: 1 }, name: 'memories_contextKey' },
@@ -103,7 +126,7 @@ export class MongoConnectionManager {
         { key: { normalizedPrompt: 1 }, name: 'memories_normalizedPrompt' },
         { key: { updatedAt: -1 }, name: 'memories_updatedAt' },
         { key: { contextKey: 1, active: 1 }, name: 'memories_contextKey_active' },
-        { key: { normalizedPrompt: 1, contextKey: 1 }, name: 'memories_active_exact_unique', unique: true, partialFilterExpression: { active: true } },
+        { key: { normalizedPrompt: 1, contextKey: 1, provenance: 1, scope: 1, workspaceKey: 1 }, name: 'memories_active_exact_unique', unique: true, partialFilterExpression: { active: true, provenance: { $exists: true }, scope: { $exists: true } } },
       ]),
       db.collection('interactions').createIndexes([
         { key: { sessionId: 1, createdAt: -1 }, name: 'interactions_sessionId_createdAt' },
@@ -117,4 +140,8 @@ export class MongoConnectionManager {
 
 export function redactUri(uri: string): string {
   return uri.replace(/\/\/[^@/]*@/, '//***@');
+}
+
+function isMissingNamespace(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { readonly code?: unknown }).code === 26;
 }

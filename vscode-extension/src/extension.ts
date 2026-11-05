@@ -29,17 +29,18 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.Uri.joinPath(context.extensionUri, 'models', 'paraphrase-multilingual-minilm').fsPath,
   );
   const output = vscode.window.createOutputChannel('AI Dev Assistant');
+  const projectContext = new VscodeProjectContextProvider();
   const service = new LocalMemoryService(
     memory,
     embeddings,
-    new VscodeProjectContextProvider(),
+    projectContext,
     (diagnostic) => {
       const compatible = diagnostic.candidates.filter((candidate) => candidate.contextCompatible).length;
       const bestSimilarity = diagnostic.candidates[0]?.similarity;
       output.appendLine(`Mongo memory search: documentsFetched=${diagnostic.candidates.length} activeCandidates=${diagnostic.candidates.length} contextCompatibleCandidates=${compatible} bestSimilarity=${bestSimilarity ?? 'none'} matchType=${diagnostic.matchType} reason=${diagnostic.reason}`);
     },
   );
-  const promotions = new InteractionPromotionService(interactions, service);
+  const promotions = new InteractionPromotionService(interactions, service, () => projectContext.currentWorkspaceKeys(), () => projectContext.currentWorkspaceOrigins());
   const configurationCoordinator = new MongoHookConfigurationCoordinator({
     readConfiguration: mongoConfiguration,
     getActiveConfiguration: () => connection.currentConfiguration(),
