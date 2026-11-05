@@ -7,7 +7,6 @@ import { registerMemoryTools } from './memoryTools.js';
 import { migrateJsonMemory } from './jsonMemoryMigration.js';
 import { MongoConnectionManager } from './mongoConnectionManager.js';
 import { MongoInteractionStore } from './mongoInteractionStore.js';
-import { workspaceKey } from './interactionCapture.js';
 import { installAgentScopedHookRunner, installationAt, isAgentScopedHookRunnerInstalled, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from './interactionHookInstallation.js';
 import { InteractionPromotionService } from './interactionPromotionService.js';
 import { MongoMemoryStore } from './mongoMemoryStore.js';
@@ -256,8 +255,12 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('aiDevAssistant.showInteractionStatistics', async () => {
       try {
-        const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        const stats = await interactions.statistics(workspaceKey(cwd));
+        const selectedWorkspaceKey = projectContext.currentSearchWorkspaceKey();
+        if (selectedWorkspaceKey === undefined) {
+          await vscode.window.showInformationMessage('Estatísticas indisponíveis: não foi possível identificar um único workspace selecionado.');
+          return;
+        }
+        const stats = await interactions.statistics(selectedWorkspaceKey, projectContext.currentWorkspaceOrigins());
         await vscode.window.showInformationMessage(`Interações: ${stats.total} total, ${stats.pending} pendente(s), ${stats.completed} concluída(s), ${stats.unavailable} falha(s)/indisponível(is). Última: ${stats.last?.createdAt.toISOString() ?? 'nenhuma'}.`);
       } catch (error) { await vscode.window.showWarningMessage(`Interações MongoDB indisponíveis: ${message(error)}`); }
     }),

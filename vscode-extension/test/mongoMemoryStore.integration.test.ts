@@ -18,6 +18,54 @@ const SAVE_MEMORY_TOOL = 'ai-dev-assistant_saveMemory';
 
 const context: ProjectContext = { buildTool: 'MAVEN', frameworks: [{ name: 'SPRING_BOOT', version: '3.5.14' }], languages: [{ name: 'JAVA', version: '21' }] };
 
+test('MongoDB real: estatísticas isolam o workspace selecionado e rejeitam origem ambígua', async (t) => {
+  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_e3_003_${randomUUID().replaceAll('-', '')}` });
+  const originA = workspaceKey('C:/workspace-a')!;
+  const originB = workspaceKey('C:/workspace-b')!;
+  const originC = workspaceKey('C:/workspace-c')!;
+  const origins = [
+    { workspaceKey: originA, normalizedPath: normalizeWorkspacePath('C:/workspace-a')! },
+    { workspaceKey: originB, normalizedPath: normalizeWorkspacePath('C:/workspace-b')! },
+  ];
+  try {
+    try { await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
+    const interactions = new MongoInteractionStore(connection);
+    const at = (second: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, second));
+    const records = [
+      { interactionId: 'a-pending', sessionId: 'a-pending', workspaceKey: originA, originalRequest: 'A pending', status: 'PENDING' as const, createdAt: at(1), metadata: { stack: 'MAVEN-SPRING' } },
+      { interactionId: 'a-completed', sessionId: 'a-completed', workspaceKey: originA, originalRequest: 'A completed', status: 'COMPLETED' as const, createdAt: at(2), metadata: { stack: 'MAVEN-SPRING' } },
+      { interactionId: 'a-failed', sessionId: 'a-failed', workspaceKey: originA, originalRequest: 'A failed', status: 'FAILED' as const, createdAt: at(3), metadata: { stack: 'MAVEN-SPRING' } },
+      { interactionId: 'a-unavailable', sessionId: 'a-unavailable', workspaceKey: originA, originalRequest: 'A unavailable', status: 'RESPONSE_UNAVAILABLE' as const, createdAt: at(4), metadata: { stack: 'MAVEN-SPRING' } },
+      { interactionId: 'a-legacy', sessionId: 'a-legacy', workspaceKey: originA, originalRequest: 'A legacy identity', status: 'COMPLETED' as const, createdAt: at(5), metadata: { stack: 'MAVEN-SPRING' } },
+      { interactionId: 'a-subdirectory', sessionId: 'a-subdirectory', workspaceKey: workspaceKey('C:/workspace-a/apps/service')!, cwd: 'C:/workspace-a/apps/service/src', originalRequest: 'A subdirectory', status: 'COMPLETED' as const, createdAt: at(6), metadata: { stack: 'MAVEN-SPRING' } },
+      { interactionId: 'b-pending', sessionId: 'b-pending', workspaceKey: originB, originalRequest: 'B pending', status: 'PENDING' as const, createdAt: at(7), metadata: { stack: 'MAVEN-SPRING' } },
+      { interactionId: 'b-completed', sessionId: 'b-completed', workspaceKey: originB, originalRequest: 'B completed', status: 'COMPLETED' as const, createdAt: at(8), metadata: { stack: 'MAVEN-SPRING' } },
+      { interactionId: 'b-unavailable', sessionId: 'b-unavailable', workspaceKey: originB, originalRequest: 'B unavailable', status: 'RESPONSE_UNAVAILABLE' as const, createdAt: at(9), metadata: { stack: 'MAVEN-SPRING' } },
+      { interactionId: 'without-origin', sessionId: 'without-origin', originalRequest: 'Unknown origin', status: 'COMPLETED' as const, createdAt: at(10), metadata: { stack: 'MAVEN-SPRING' } },
+      { interactionId: 'ambiguous-cwd', sessionId: 'ambiguous-cwd', workspaceKey: originA, cwd: 'C:/outside', originalRequest: 'Ambiguous origin', status: 'COMPLETED' as const, createdAt: at(11), metadata: { stack: 'MAVEN-SPRING' } },
+    ];
+    for (const record of records) await interactions.save(record);
+
+    const statsA = await interactions.statistics(originA, origins);
+    assert.equal(statsA.total, 6);
+    assert.equal(statsA.pending, 1);
+    assert.equal(statsA.completed, 3);
+    assert.equal(statsA.unavailable, 2);
+    assert.equal(statsA.last?.interactionId, 'a-subdirectory');
+
+    const statsB = await interactions.statistics(originB, origins);
+    assert.deepEqual({ total: statsB.total, pending: statsB.pending, completed: statsB.completed, unavailable: statsB.unavailable, last: statsB.last?.interactionId }, { total: 3, pending: 1, completed: 1, unavailable: 1, last: 'b-unavailable' });
+
+    const statsEmpty = await interactions.statistics(originC, origins);
+    assert.deepEqual({ total: statsEmpty.total, pending: statsEmpty.pending, completed: statsEmpty.completed, unavailable: statsEmpty.unavailable, last: statsEmpty.last }, { total: 0, pending: 0, completed: 0, unavailable: 0, last: undefined });
+    assert.equal((await interactions.statistics(originA, origins)).last?.workspaceKey, workspaceKey('C:/workspace-a/apps/service'));
+    assert.equal((await interactions.statistics(originB, origins)).last?.workspaceKey, originB);
+  } finally {
+    try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
+    await connection.close();
+  }
+});
+
 test('MongoDB real: save -> exact e candidato semântico Maven/pom.xml', async (t) => {
   const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   try {

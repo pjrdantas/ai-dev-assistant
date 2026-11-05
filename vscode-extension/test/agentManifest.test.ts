@@ -74,6 +74,9 @@ test('contribui o Custom Agent e as tools de memória sem restringir ferramentas
 
   const extension = await readFile(join(extensionRoot, 'src', 'extension.ts'), 'utf8');
   assert.doesNotMatch(extension, /\.generate\(/);
+  assert.match(extension, /const selectedWorkspaceKey = projectContext\.currentSearchWorkspaceKey\(\)/);
+  assert.match(extension, /interactions\.statistics\(selectedWorkspaceKey, projectContext\.currentWorkspaceOrigins\(\)\)/);
+  assert.doesNotMatch(extension, /workspaceFolders\?\.\[0\]/);
   assert.match(extension, /installAgentScopedHookRunner/);
   assert.match(extension, /removeLegacyGlobalInteractionHook/);
   assert.doesNotMatch(extension, /enableCustomAgentHooksWhenRegistered/);

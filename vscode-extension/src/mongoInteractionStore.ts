@@ -30,12 +30,20 @@ export class MongoInteractionStore {
   }
 
   public async count(): Promise<number> { return (await this.interactions()).countDocuments(); }
-  public async statistics(workspaceKey?: string): Promise<{ readonly total: number; readonly pending: number; readonly completed: number; readonly unavailable: number; readonly last?: InteractionRecord }> {
+  public async statistics(workspaceKey: string, origins: readonly WorkspaceOrigin[] = []): Promise<{ readonly total: number; readonly pending: number; readonly completed: number; readonly unavailable: number; readonly last?: InteractionRecord }> {
     const collection = await this.interactions();
-    const [total, pending, completed, unavailable, last] = await Promise.all([
-      collection.countDocuments(), collection.countDocuments({ status: 'PENDING' }), collection.countDocuments({ status: 'COMPLETED' }), collection.countDocuments({ status: { $in: ['FAILED', 'RESPONSE_UNAVAILABLE'] } }), workspaceKey === undefined ? Promise.resolve(null) : collection.find({ workspaceKey }).sort({ createdAt: -1 }).limit(1).next(),
-    ]);
-    return { total, pending, completed, unavailable, last: last ?? undefined };
+    const candidates = await collection.find({ $or: [{ workspaceKey }, { cwd: { $exists: true } }] }).toArray();
+    const records = candidates.filter((record) => record.cwd !== undefined
+      ? resolveWorkspaceOrigin(record.cwd, origins)?.workspaceKey === workspaceKey
+      : record.workspaceKey === workspaceKey);
+    const last = [...records].sort((left, right) => right.createdAt.valueOf() - left.createdAt.valueOf())[0];
+    return {
+      total: records.length,
+      pending: records.filter((record) => record.status === 'PENDING').length,
+      completed: records.filter((record) => record.status === 'COMPLETED').length,
+      unavailable: records.filter((record) => record.status === 'FAILED' || record.status === 'RESPONSE_UNAVAILABLE').length,
+      last,
+    };
   }
   public async clear(): Promise<void> { await (await this.interactions()).deleteMany({}); }
 
