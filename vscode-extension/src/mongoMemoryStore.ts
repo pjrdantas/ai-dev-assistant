@@ -60,7 +60,7 @@ export class MongoMemoryStore implements LocalMemoryStore {
   public async findSimilar(embedding: readonly number[], context: ProjectContext | undefined, lookup: MemoryLookupScope = {}): Promise<readonly LocalMemoryMatch[]> {
     validateEmbedding(embedding);
     const contextKey = projectContextKey(context);
-    const documents = await (await this.memories()).find({ active: true, embedding: { $exists: true }, ...accessibleQuery(lookup) }).toArray();
+    const documents = await (await this.memories()).find(similarQuery(lookup)).toArray();
     return documents
       .filter((document) => isDeduplicationMatch(mapDocument(document), lookup))
       .filter((document) => document.embedding !== undefined && document.embedding.length === embedding.length)
@@ -319,6 +319,22 @@ function accessibleQuery(lookup: MemoryLookupScope): Record<string, unknown> {
     { scope: 'SHARED' },
     ...(lookup.workspaceKey === undefined ? [] : [{ scope: 'WORKSPACE', workspaceKey: lookup.workspaceKey }]),
   ] };
+}
+
+function similarQuery(lookup: MemoryLookupScope): Record<string, unknown> {
+  const predicates: Record<string, unknown>[] = [accessibleQuery(lookup)];
+  if (lookup.deduplication !== undefined) predicates.push(deduplicationMongoQuery(lookup.deduplication));
+  return { active: true, embedding: { $exists: true }, $and: predicates };
+}
+
+function deduplicationMongoQuery(options: MemorySaveOptions): Record<string, unknown> {
+  return {
+    provenance: options.provenance,
+    scope: options.scope,
+    ...(options.workspaceKey === undefined
+      ? { $or: [{ workspaceKey: { $exists: false } }, { workspaceKey: null }] }
+      : { workspaceKey: options.workspaceKey }),
+  };
 }
 
 function exactQueries(normalizedPrompt: string, contextKey: string, lookup: MemoryLookupScope): readonly Record<string, unknown>[] {

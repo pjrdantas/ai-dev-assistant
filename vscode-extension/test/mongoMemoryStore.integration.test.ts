@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
+import { MongoClient } from 'mongodb';
 import type { Document } from 'mongodb';
 
 import { ProjectContext, ProjectContextProvider } from '../src/contracts.js';
@@ -267,6 +268,77 @@ test('MongoDB real: busca semântica prefere workspace atual mesmo com compartil
   } finally {
     try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
     await connection.close();
+  }
+});
+
+test('MongoDB real: deduplicação aplica identidade no Mongo e preserva a semântica de acesso', async (t) => {
+  const databaseName = `ai_dev_assistant_e3_004_dedup_${randomUUID().replaceAll('-', '')}`;
+  const monitoredClient = new MongoClient('mongodb://127.0.0.1:27017', { monitorCommands: true });
+  const returnedDocuments: number[] = [];
+  monitoredClient.on('commandSucceeded', (event) => {
+    if (event.commandName !== 'find' && event.commandName !== 'getMore') return;
+    const reply = event.reply as { readonly cursor?: { readonly firstBatch?: readonly unknown[]; readonly nextBatch?: readonly unknown[] } };
+    const batch = reply.cursor?.firstBatch ?? reply.cursor?.nextBatch ?? [];
+    returnedDocuments.push(batch.length);
+  });
+  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: databaseName }, () => monitoredClient);
+  const originA = workspaceKey('C:/workspace-a')!;
+  const originB = workspaceKey('C:/workspace-b')!;
+  const timestamp = new Date('2026-01-01T00:00:00.000Z');
+  const memoryDocument = (id: string, response: string, extra: Record<string, unknown>): Document & { readonly _id: string } => ({
+    _id: id, schemaVersion: 2, originalRequest: id, normalizedPrompt: 'mesmo prompt', contextKey: JSON.stringify(context), response,
+    embedding: [1, 0], active: true, createdAt: timestamp, updatedAt: timestamp, lastUsedAt: timestamp, reuseCount: 0, ...extra,
+  });
+  try {
+    let database;
+    try { database = await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
+    const memories = database.collection<Document & { readonly _id: string }>('memories');
+    await memories.insertMany([
+      memoryDocument('auto-a', 'A', { provenance: 'AUTO_PROMOTED', scope: 'WORKSPACE', workspaceKey: originA }),
+      memoryDocument('auto-b', 'B', { provenance: 'AUTO_PROMOTED', scope: 'WORKSPACE', workspaceKey: originB }),
+      memoryDocument('manual-shared', 'shared', { provenance: 'MANUAL', scope: 'SHARED' }),
+      memoryDocument('legacy', 'legacy', {}),
+      memoryDocument('auto-null', 'auto-null', { provenance: 'AUTO_PROMOTED', scope: 'WORKSPACE', workspaceKey: null }),
+    ]);
+    const store = new MongoMemoryStore(connection);
+
+    returnedDocuments.length = 0;
+    const autoA = await store.findSimilar([1, 0], context, { workspaceKey: originA, deduplication: { provenance: 'AUTO_PROMOTED', scope: 'WORKSPACE', workspaceKey: originA } });
+    assert.deepEqual(autoA.map((match) => match.knowledge.id), ['auto-a']);
+    assert.equal(returnedDocuments.reduce((sum, count) => sum + count, 0), 1, 'deduplicação deve transferir somente a identidade compatível');
+
+    returnedDocuments.length = 0;
+    const manualShared = await store.findSimilar([1, 0], context, { workspaceKey: originA, deduplication: { provenance: 'MANUAL', scope: 'SHARED' } });
+    assert.deepEqual(manualShared.map((match) => match.knowledge.id), ['manual-shared']);
+    assert.equal(returnedDocuments.reduce((sum, count) => sum + count, 0), 1);
+
+    await memories.deleteOne({ _id: 'manual-shared' });
+    await memories.insertOne(memoryDocument('manual-shared-null', 'shared-null', { provenance: 'MANUAL', scope: 'SHARED', workspaceKey: null }));
+    returnedDocuments.length = 0;
+    const manualSharedNull = await store.findSimilar([1, 0], context, { workspaceKey: originA, deduplication: { provenance: 'MANUAL', scope: 'SHARED' } });
+    assert.deepEqual(manualSharedNull.map((match) => match.knowledge.id), ['manual-shared-null']);
+    assert.equal(returnedDocuments.reduce((sum, count) => sum + count, 0), 1);
+
+    const normal = await store.findSimilar([1, 0], context, { workspaceKey: originA });
+    assert.deepEqual(new Set(normal.map((match) => match.knowledge.id)), new Set(['auto-a', 'manual-shared-null', 'legacy']));
+    const withoutLegacy = await store.findSimilar([1, 0], context, { workspaceKey: originA, includeLegacy: false });
+    assert.equal(withoutLegacy.some((match) => match.knowledge.id === 'legacy'), false);
+
+    const service = new LocalMemoryService(store, { async generate() { return [1, 0]; } }, { async capture() { return context; }, currentWorkspaceKeys() { return [originA]; } } as ProjectContextProvider & { currentWorkspaceKeys: () => readonly string[] });
+    const semantic = await service.save('nova formulação semântica', 'A atualizada', originA);
+    assert.equal(semantic.reusedExistingKnowledge, true);
+    assert.equal((await memories.findOne({ _id: 'auto-a' }))?.response, 'A atualizada');
+    assert.equal((await memories.findOne({ _id: 'auto-b' }))?.response, 'B');
+
+    await assert.doesNotReject(() => Promise.all([
+      store.save('corrida E11000', 'corrida e11000', context, 'resposta 1', [1, 0]),
+      store.save('corrida E11000', 'corrida e11000', context, 'resposta 2', [1, 0]),
+    ]));
+    assert.equal(await memories.countDocuments({ normalizedPrompt: 'corrida e11000', active: true }), 1);
+  } finally {
+    try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
+    await connection.close();
+    await monitoredClient.close();
   }
 });
 
