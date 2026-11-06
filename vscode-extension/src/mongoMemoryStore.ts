@@ -3,6 +3,7 @@ import { Collection, Document } from 'mongodb';
 import { ProjectContext } from './contracts.js';
 import { LocalKnowledge, LocalMemoryMatch, LocalMemoryStore, MemoryLookupScope, MemorySaveOptions, isDeduplicationMatch, memoryProvenance, memoryScope, projectContextKey } from './localMemoryStore.js';
 import { MongoConnectionManager } from './mongoConnectionManager.js';
+import { containsSensitiveContent } from './sensitiveContent.js';
 
 const SCHEMA_VERSION = 2;
 
@@ -52,7 +53,10 @@ export class MongoMemoryStore implements LocalMemoryStore {
         { $inc: { reuseCount: 1 }, $set: { lastUsedAt: timestamp, updatedAt: timestamp } },
         { returnDocument: 'after' },
       );
-      if (document !== null) return mapDocument(document);
+      if (document !== null) {
+        const knowledge = mapDocument(document);
+        if (!containsSensitiveMemory(knowledge)) return knowledge;
+      }
     }
     return undefined;
   }
@@ -81,10 +85,13 @@ export class MongoMemoryStore implements LocalMemoryStore {
       { $inc: { reuseCount: 1 }, $set: { lastUsedAt: timestamp, updatedAt: timestamp } },
       { returnDocument: 'after' },
     );
-    return document === null ? undefined : mapDocument(document);
+    if (document === null) return undefined;
+    const knowledge = mapDocument(document);
+    return containsSensitiveMemory(knowledge) ? undefined : knowledge;
   }
 
   public async save(originalRequest: string, normalizedPrompt: string, context: ProjectContext | undefined, response: string, embedding: readonly number[], options: MemorySaveOptions = { provenance: 'MANUAL', scope: 'SHARED' }): Promise<LocalKnowledge> {
+    rejectSensitiveMemory(originalRequest, normalizedPrompt, response);
     validateEmbedding(embedding);
     const collection = await this.memories();
     const contextKey = projectContextKey(context);
@@ -115,6 +122,7 @@ export class MongoMemoryStore implements LocalMemoryStore {
   }
 
   public async replace(id: string, response: string, embedding: readonly number[]): Promise<LocalKnowledge | undefined> {
+    if (containsSensitiveContent(response)) throw new Error('Conteúdo potencialmente sensível não pode ser usado na memória local.');
     validateEmbedding(embedding);
     const timestamp = this.now();
     const document = await (await this.memories()).findOneAndUpdate(
@@ -245,6 +253,7 @@ export class MongoMemoryStore implements LocalMemoryStore {
   }
 
   public async upsertMigrated(entry: LocalKnowledge): Promise<void> {
+    rejectSensitiveMemory(entry.originalRequest, entry.normalizedPrompt, entry.response);
     const document = toMigrationDocument(entry);
     await (await this.memories()).updateOne({ _id: document._id }, { $setOnInsert: document }, { upsert: true });
   }
@@ -257,6 +266,7 @@ export class MongoMemoryStore implements LocalMemoryStore {
   }
 
   private async reactivateDocument(collection: Collection<MemoryDocument>, document: MemoryDocument, requireInvalidatedAt: boolean): Promise<boolean> {
+    if (containsSensitiveMemory(mapDocument(document))) return false;
     try {
       const result = await collection.updateOne(
         {
@@ -279,6 +289,18 @@ export class MongoMemoryStore implements LocalMemoryStore {
       throw error;
     }
   }
+}
+
+function rejectSensitiveMemory(originalRequest: string, normalizedPrompt: string, response: string): void {
+  if (containsSensitiveContent(originalRequest) || containsSensitiveContent(normalizedPrompt) || containsSensitiveContent(response)) {
+    throw new Error('Conteúdo potencialmente sensível não pode ser usado na memória local.');
+  }
+}
+
+function containsSensitiveMemory(entry: Pick<LocalKnowledge, 'originalRequest' | 'normalizedPrompt' | 'response'>): boolean {
+  return containsSensitiveContent(entry.originalRequest)
+    || containsSensitiveContent(entry.normalizedPrompt)
+    || containsSensitiveContent(entry.response);
 }
 
 function mapDocument(document: MemoryDocument): LocalKnowledge {

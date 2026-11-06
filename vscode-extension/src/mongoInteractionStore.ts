@@ -2,6 +2,7 @@ import { Collection, Document } from 'mongodb';
 
 import { MongoConnectionManager } from './mongoConnectionManager.js';
 import { WorkspaceOrigin, resolveWorkspaceOrigin } from './interactionCapture.js';
+import { containsSensitiveContent } from './sensitiveContent.js';
 
 export type InteractionStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'RESPONSE_UNAVAILABLE' | 'SKIPPED_SENSITIVE';
 export type PromotionStatus = 'PENDING' | 'PROCESSING' | 'PROMOTED' | 'SKIPPED' | 'FAILED';
@@ -26,6 +27,7 @@ export class MongoInteractionStore {
   public constructor(private readonly connection: MongoConnectionManager) {}
 
   public async save(interaction: InteractionRecord): Promise<void> {
+    rejectSensitiveInteraction(interaction);
     await (await this.interactions()).updateOne({ interactionId: interaction.interactionId }, { $setOnInsert: interaction }, { upsert: true });
   }
 
@@ -48,7 +50,7 @@ export class MongoInteractionStore {
   public async clear(): Promise<void> { await (await this.interactions()).deleteMany({}); }
 
   public async finishLatestPending(sessionId: string, result: { readonly response?: string; readonly reason?: string; readonly completedAt: Date }): Promise<boolean> {
-    const update = result.response === undefined
+    const update = result.response === undefined || containsSensitiveContent(result.response)
       ? { $set: { status: 'RESPONSE_UNAVAILABLE' as const, completedAt: result.completedAt, promotionStatus: 'SKIPPED' as const, promotionReason: result.reason ?? 'RESPONSE_UNAVAILABLE', metadata: { captureSource: 'STOP_TRANSCRIPT' } } }
       : { $set: { status: 'COMPLETED' as const, response: result.response, completedAt: result.completedAt, promotionStatus: 'PENDING' as const, metadata: { captureSource: 'STOP_TRANSCRIPT' } } };
     const found = await (await this.interactions()).findOneAndUpdate({ sessionId, status: 'PENDING' }, update, { sort: { createdAt: -1 }, returnDocument: 'after' });
@@ -103,5 +105,11 @@ export class MongoInteractionStore {
   private async interactions(): Promise<Collection<InteractionRecord & Document>> {
     await this.connection.ensureIndexes();
     return (await this.connection.database()).collection<InteractionRecord & Document>('interactions');
+  }
+}
+
+function rejectSensitiveInteraction(interaction: InteractionRecord): void {
+  if (containsSensitiveContent(interaction.originalRequest) || (interaction.response !== undefined && containsSensitiveContent(interaction.response))) {
+    throw new Error('Interação potencialmente sensível não pode ser persistida.');
   }
 }

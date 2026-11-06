@@ -1,5 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { readUtf8WithinLimit, InputLimitError } from './boundedInput.js';
+import { containsSensitiveContent } from './sensitiveContent.js';
 
 export const MAX_TRANSCRIPT_BYTES = 4 * 1024 * 1024;
 export const MAX_TRANSCRIPT_LINES = 10_000;
@@ -81,6 +82,10 @@ export class TranscriptResponseExtractor {
         kind: 'UNAVAILABLE',
         reason: 'FINAL_RESPONSE_TOO_LARGE',
       };
+    }
+
+    if (containsSensitiveContent(response)) {
+      return { kind: 'UNAVAILABLE', reason: 'SENSITIVE_RESPONSE' };
     }
 
     return {

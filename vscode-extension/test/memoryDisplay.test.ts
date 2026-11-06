@@ -23,3 +23,7 @@ test('aceita variação sem que após reutilizável', () => {
     'Projeto usa Java 21',
   );
 });
+
+test('não exibe prompt de memória que contenha credencial sintética', () => {
+  assert.equal(memoryDisplayTitle(`token=${'r'.repeat(24)}`), '[REDACTED SENSITIVE MEMORY]');
+});

@@ -94,6 +94,19 @@ test('extrai resposta do formato assistant.message do transcript do VS Code', as
   }
 });
 
+test('não retorna resposta assistant que contenha credencial sintética', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-transcript-'));
+  try {
+    const path = join(directory, 'sensitive.jsonl');
+    await writeFile(path, JSON.stringify({ role: 'assistant', content: `Authorization: Bearer ${'z'.repeat(24)}` }), 'utf8');
+    assert.deepEqual(await new TranscriptResponseExtractor().extractFinalAssistantResponse(path), {
+      kind: 'UNAVAILABLE', reason: 'SENSITIVE_RESPONSE',
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('falha de transcript não fabrica resposta', async () => {
   const extractor = new TranscriptResponseExtractor();
 

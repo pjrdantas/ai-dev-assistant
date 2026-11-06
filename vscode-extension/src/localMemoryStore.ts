@@ -3,6 +3,7 @@ import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'nod
 import { basename, dirname, join } from 'node:path';
 
 import { ProjectContext } from './contracts.js';
+import { containsSensitiveContent } from './sensitiveContent.js';
 
 export type MemoryProvenance = 'AUTO_PROMOTED' | 'MANUAL' | 'LEGACY';
 export type MemoryScope = 'WORKSPACE' | 'SHARED' | 'LEGACY_UNSCOPED';
@@ -116,7 +117,7 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
       && isMemoryAccessible(candidate, lookup)
       && isDeduplicationMatch(candidate, lookup));
     const entry = selectPreferredMemory(entries, lookup);
-    if (entry === undefined) {
+    if (entry === undefined || containsSensitiveMemory(entry)) {
       return undefined;
     }
     return this.updateReuse(entry.id);
@@ -130,9 +131,18 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
     embedding: readonly number[],
     options: MemorySaveOptions = { provenance: 'MANUAL', scope: 'SHARED' },
   ): Promise<LocalKnowledge> {
+    rejectSensitiveMemory(originalRequest, normalizedPrompt, response);
+    const validatedEmbedding = validateEmbedding(embedding);
     return this.serialize(async () => {
       const state = await this.read();
       const contextKey = projectContextKey(context);
+      const sensitiveConflict = state.entries.find((candidate) =>
+        candidate.normalizedPrompt === normalizedPrompt
+        && candidate.contextKey === contextKey
+        && containsSensitiveMemory(candidate));
+      if (sensitiveConflict !== undefined) {
+        throw new Error('Conteúdo potencialmente sensível não pode ser reutilizado na memória local.');
+      }
       const existing = state.entries.find((candidate) =>
         candidate.normalizedPrompt === normalizedPrompt && candidate.contextKey === contextKey
         && sameDeduplicationScope(candidate, options));
@@ -149,7 +159,7 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
         createdAt: timestamp,
         lastUsedAt: timestamp,
         reuseCount: 0,
-        embedding: validateEmbedding(embedding),
+        embedding: validatedEmbedding,
         provenance: options.provenance,
         scope: options.scope,
         workspaceKey: options.workspaceKey,
@@ -172,7 +182,7 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
       if (entry.invalidatedAt !== undefined || entry.embedding === undefined || entry.embedding.length !== query.length) {
         continue;
       }
-      if (!isMemoryAccessible(entry, lookup) || !isDeduplicationMatch(entry, lookup)) continue;
+      if (!isMemoryAccessible(entry, lookup) || !isDeduplicationMatch(entry, lookup) || containsSensitiveMemory(entry)) continue;
       const similarity = cosineSimilarity(query, entry.embedding);
       matches.push({
         knowledge: entry,
@@ -186,15 +196,19 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
   }
 
   public async registerReuse(id: string): Promise<LocalKnowledge | undefined> {
-    return this.updateReuse(id);
+    const state = await this.read();
+    const entry = state.entries.find((candidate) => candidate.id === id);
+    return entry === undefined || containsSensitiveMemory(entry) ? undefined : this.updateReuse(id);
   }
 
   public async replace(id: string, response: string, embedding: readonly number[]): Promise<LocalKnowledge | undefined> {
+    if (containsSensitiveContent(response)) throw new Error('Conteúdo potencialmente sensível não pode ser usado na memória local.');
     return this.serialize(async () => {
       const state = await this.read();
       let replacement: LocalKnowledge | undefined;
       const entries = state.entries.map((entry) => {
         if (entry.id !== id) return entry;
+        if (containsSensitiveMemory(entry)) throw new Error('Conteúdo potencialmente sensível não pode ser usado na memória local.');
         replacement = { ...entry, response, embedding: validateEmbedding(embedding), updatedAt: this.now().toISOString(), revision: (entry.revision ?? 0) + 1, invalidatedAt: undefined };
         return replacement;
       });
@@ -500,5 +514,17 @@ function isMissingFile(error: unknown): boolean {
 function isAlreadyExists(error: unknown): boolean { return typeof error === 'object' && error !== null && 'code' in error && (error as { readonly code?: unknown }).code === 'EEXIST'; }
 
 function escapeRegularExpression(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function containsSensitiveMemory(entry: Pick<LocalKnowledge, 'originalRequest' | 'normalizedPrompt' | 'response'>): boolean {
+  return containsSensitiveContent(entry.originalRequest)
+    || containsSensitiveContent(entry.normalizedPrompt)
+    || containsSensitiveContent(entry.response);
+}
+
+function rejectSensitiveMemory(originalRequest: string, normalizedPrompt: string, response: string): void {
+  if (containsSensitiveContent(originalRequest) || containsSensitiveContent(normalizedPrompt) || containsSensitiveContent(response)) {
+    throw new Error('Conteúdo potencialmente sensível não pode ser usado na memória local.');
+  }
+}
 
 function delay(milliseconds: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }

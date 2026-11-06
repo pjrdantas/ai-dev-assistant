@@ -1,8 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import type { InteractionRecord, InteractionStatus } from './mongoInteractionStore.js';
-
-const SENSITIVE_PATTERNS = [/ghp_[A-Za-z0-9]{20,}/, /github_pat_[A-Za-z0-9_]{20,}/, /sk-[A-Za-z0-9_-]{20,}/, /AKIA[0-9A-Z]{16}/, /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/];
+import { containsSensitiveContent } from './sensitiveContent.js';
 
 export interface UserPromptSubmitInput {
   readonly hook_event_name: 'UserPromptSubmit';
@@ -14,7 +13,7 @@ export interface UserPromptSubmitInput {
 
 export function interactionFromUserPrompt(input: UserPromptSubmitInput, now: () => Date = () => new Date()): InteractionRecord {
   const createdAt = input.timestamp === undefined ? now() : new Date(input.timestamp);
-  const sensitive = SENSITIVE_PATTERNS.some((pattern) => pattern.test(input.prompt));
+  const sensitive = containsSensitiveContent(input.prompt);
   const cwd = input.cwd;
   return {
     interactionId: randomUUID(),

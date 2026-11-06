@@ -2,6 +2,7 @@ import { MatchType, ProjectContext, ProjectContextProvider } from './contracts.j
 import { LocalEmbeddingProvider } from './localEmbeddingProvider.js';
 import { LocalKnowledge, LocalMemoryMatch, LocalMemoryStore, MemorySaveOptions, memoryProvenance, memoryScope, normalizePrompt } from './localMemoryStore.js';
 import { MongoMemoryUnavailableError } from './mongoConnectionManager.js';
+import { containsSensitiveContent } from './sensitiveContent.js';
 
 const MAX_PROMPT_CHARACTERS = 20_000;
 const FULL_SIMILARITY_THRESHOLD = 0.90;
@@ -9,13 +10,6 @@ const PARTIAL_SIMILARITY_THRESHOLD = 0.70;
 // Calibrated with the bundled model: real pom.xml formulations score 0.850090208950.
 // Keep deduplication stricter than PARTIAL (0.70), but do not require a FULL match.
 export const SEMANTIC_DEDUPLICATION_THRESHOLD = 0.85;
-const SENSITIVE_CONTENT_PATTERNS = [
-  /ghp_[A-Za-z0-9]{20,}/,
-  /github_pat_[A-Za-z0-9_]{20,}/,
-  /sk-[A-Za-z0-9_-]{20,}/,
-  /AKIA[0-9A-Z]{16}/,
-  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
-];
 
 export interface MemorySearchResult {
   readonly matchType: MatchType;
@@ -71,6 +65,7 @@ export class LocalMemoryService {
     }
     if (exact !== undefined) {
       if (!this.isCurrentWorkspace(workspaceKey)) return none();
+      if (containsSensitiveContent(exact.originalRequest) || containsSensitiveContent(exact.response)) return none();
       this.diagnose(prompt, [], 'FULL', 'EXACT', exact.id);
       return full(exact, 1);
     }
@@ -85,7 +80,10 @@ export class LocalMemoryService {
       throw error;
     }
     if (!this.isCurrentWorkspace(workspaceKey)) return none();
-    const compatible = candidates.find((candidate) =>
+    const safeCandidates = candidates.filter((candidate) =>
+      !containsSensitiveContent(candidate.knowledge.originalRequest)
+      && !containsSensitiveContent(candidate.knowledge.response));
+    const compatible = safeCandidates.find((candidate) =>
       candidate.contextCompatible && candidate.similarity >= FULL_SIMILARITY_THRESHOLD);
     if (compatible !== undefined) {
       if (!this.isCurrentWorkspace(workspaceKey)) return none();
@@ -95,13 +93,13 @@ export class LocalMemoryService {
       return full(reused, compatible.similarity);
     }
 
-    const partial = candidates.find((candidate) => candidate.similarity >= PARTIAL_SIMILARITY_THRESHOLD);
+    const partial = safeCandidates.find((candidate) => candidate.similarity >= PARTIAL_SIMILARITY_THRESHOLD);
     if (partial === undefined) {
       this.diagnose(prompt, candidates, 'NONE', 'NO_CANDIDATE');
       return none();
     }
     if (!this.isCurrentWorkspace(workspaceKey)) return none();
-    this.diagnose(prompt, candidates, 'PARTIAL', 'SEMANTIC_PARTIAL', partial.knowledge.id);
+    this.diagnose(prompt, safeCandidates, 'PARTIAL', 'SEMANTIC_PARTIAL', partial.knowledge.id);
     return partialResult(partial);
   }
 
@@ -126,6 +124,8 @@ export class LocalMemoryService {
       throw error;
     }
     if (existing !== undefined) {
+      rejectSensitiveContent(existing.originalRequest);
+      rejectSensitiveContent(existing.response);
       return { memoryId: existing.id, reusedExistingKnowledge: true };
     }
     const embedding = await this.embeddings.generate(prompt);
@@ -138,7 +138,9 @@ export class LocalMemoryService {
       throw error;
     }
     const duplicate = candidates.find((candidate) =>
-      candidate.contextCompatible
+      !containsSensitiveContent(candidate.knowledge.originalRequest)
+      && !containsSensitiveContent(candidate.knowledge.response)
+      && candidate.contextCompatible
       && candidate.similarity >= SEMANTIC_DEDUPLICATION_THRESHOLD
       && sameSaveScope(candidate.knowledge, provenance));
     if (duplicate !== undefined && this.memory.replace !== undefined) {
@@ -150,7 +152,11 @@ export class LocalMemoryService {
         if (error instanceof MongoMemoryUnavailableError) return { memoryId: '', reusedExistingKnowledge: false, memoryUnavailable: true };
         throw error;
       }
-      if (updated !== undefined) return { memoryId: updated.id, reusedExistingKnowledge: true };
+      if (updated !== undefined) {
+        rejectSensitiveContent(updated.originalRequest);
+        rejectSensitiveContent(updated.response);
+        return { memoryId: updated.id, reusedExistingKnowledge: true };
+      }
     }
     let stored: LocalKnowledge;
     try {
@@ -160,6 +166,8 @@ export class LocalMemoryService {
       if (error instanceof MongoMemoryUnavailableError) return { memoryId: '', reusedExistingKnowledge: false, memoryUnavailable: true };
       throw error;
     }
+    rejectSensitiveContent(stored.originalRequest);
+    rejectSensitiveContent(stored.response);
     return { memoryId: stored.id, reusedExistingKnowledge: false };
   }
 
@@ -253,7 +261,7 @@ function validateSolution(value: string): string {
 }
 
 function rejectSensitiveContent(value: string): void {
-  if (SENSITIVE_CONTENT_PATTERNS.some((pattern) => pattern.test(value))) {
+  if (containsSensitiveContent(value)) {
     throw new Error('Conteúdo potencialmente sensível não pode ser usado na memória local.');
   }
 }
