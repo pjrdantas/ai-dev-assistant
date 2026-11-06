@@ -9,6 +9,8 @@ package-lock.json
 *.vsix
 *.log
 *.tsbuildinfo
+ETAPA_*
+benchmark/**
 node_modules/**/*.map
 node_modules/**/*.ts
 node_modules/**/*.d.ts
