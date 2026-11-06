@@ -1,0 +1,52 @@
+{
+  "projectType": "plugin",
+  "setup": [
+    {
+      "command": "npm",
+      "args": [
+        "ci"
+      ],
+      "timeoutSeconds": 600
+    }
+  ],
+  "assertions": [
+    {
+      "name": "compile",
+      "kind": "process",
+      "command": "npm",
+      "args": [
+        "run",
+        "compile"
+      ],
+      "verificationMethod": "exit-code",
+      "expected": "0",
+      "timeoutSeconds": 180
+    },
+    {
+      "name": "tests-pass",
+      "kind": "process",
+      "command": "npm",
+      "args": [
+        "test"
+      ],
+      "verificationMethod": "test-results",
+      "expected": "0",
+      "timeoutSeconds": 300
+    },
+    {
+      "name": "vsix-packages",
+      "kind": "process",
+      "command": "node",
+      "args": [
+        "node_modules/@vscode/vsce/vsce",
+        "package",
+        "--no-dependencies",
+        "--out",
+        "C:\\Users\\pjr_d\\AppData\\Local\\Temp\\ai-dev-assistant-validation.vsix"
+      ],
+      "verificationMethod": "exit-code",
+      "expected": "0",
+      "timeoutSeconds": 300
+    }
+  ]
+}

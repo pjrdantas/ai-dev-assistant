@@ -1,0 +1,111 @@
+{
+  "planHash": "877c3b484d8ab1dbb52751e82095499d6b0f5fc9282ecdc3174984bca39b4a2e",
+  "phase": "baseline",
+  "recordedAtUtc": "2026-11-06T15:15:17.9111474Z",
+  "retryCount": 0,
+  "resetBaseline": true,
+  "complete": true,
+  "result": {
+    "setupSucceeded": true,
+    "setupDurationMs": 22270,
+    "setupFailureOutput": null,
+    "assertions": [
+      {
+        "name": "compile",
+        "kind": "process",
+        "verificationMethod": "exit-code",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "\r\n\u003E ai-dev-assistant@0.1.11 compile\r\n\u003E npm run clean \u0026\u0026 tsc -p ./\r\n\r\n\r\n\u003E ai-dev-assistant@0.1.11 clean\r\n\u003E node -e \u0022require(\u0027node:fs\u0027).rmSync(\u0027out\u0027, { recursive: true, force: true })\u0022\r\n\r\n",
+        "durationMs": 2362
+      },
+      {
+        "name": "tests-pass",
+        "kind": "process",
+        "verificationMethod": "test-results",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "\r\n\u003E ai-dev-assistant@0.1.11 test\r\n\u003E npm run compile \u0026\u0026 node --test \u0022out/test/*.test.js\u0022\r\n\r\n\r\n\u003E ai-dev-assistant@0.1.11 compile\r\n\u003E npm run clean \u0026\u0026 tsc -p ./\r\n\r\n\r\n\u003E ai-dev-assistant@0.1.11 clean\r\n\u003E node -e \u0022require(\u0027node:fs\u0027).rmSync(\u0027out\u0027, { recursive: true, force: true })\u0022\r\n\r\nTAP version 13\r\n# Subtest: contribui o Custom Agent e as tools de mem\u00F3ria sem restringir ferramentas nativas ou modelo\r\nok 1 - contribui o Custom Agent e as tools de mem\u00F3ria sem restringir ferramentas nativas ou modelo\r\n  ---\r\n  duration_ms: 15.0881\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: instrui o agent loop a consultar e salvar mem\u00F3ria automaticamente\r\nok 2 - instrui o agent loop a consultar e salvar mem\u00F3ria automaticamente\r\n  ---\r\n  duration_ms: 3.7876\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: versiona revis\u00F5es, invalida, exclui e limpa mem\u00F3ria\r\nok 3 - versiona revis\u00F5es, invalida, exclui e limpa mem\u00F3ria\r\n  ---\r\n  duration_ms: 40.3196\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: recupera JSON corrompido preservando backup\r\nok 4 - recupera JSON corrompido preservando backup\r\n  ---\r\n  duration_ms: 5.635\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: mant\u00E9m de zero a cinco backups pr\u00F3prios de corrup\u00E7\u00E3o\r\nok 5 - mant\u00E9m de zero a cinco backups pr\u00F3prios de corrup\u00E7\u00E3o\r\n  ---\r\n  duration_ms: 20.1547\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: ret\u00E9m somente os cinco backups pr\u00F3prios mais recentes ap\u00F3s seis e dez corrup\u00E7\u00F5es\r\nok 6 - ret\u00E9m somente os cinco backups pr\u00F3prios mais recentes ap\u00F3s seis e dez corrup\u00E7\u00F5es\r\n  ---\r\n  duration_ms: 91.1747\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: n\u00E3o remove arquivos de nome parecido nem o arquivo principal durante a reten\u00E7\u00E3o\r\nok 7 - n\u00E3o remove arquivos de nome parecido nem o arquivo principal durante a reten\u00E7\u00E3o\r\n  ---\r\n  duration_ms: 25.3355\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: mant\u00E9m o backup rec\u00E9m-criado ap\u00F3s a limpeza de reten\u00E7\u00E3o\r\nok 8 - mant\u00E9m o backup rec\u00E9m-criado ap\u00F3s a limpeza de reten\u00E7\u00E3o\r\n  ---\r\n  duration_ms: 42.8217\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: remove lock comprovadamente obsoleto antes de gravar\r\nok 9 - remove lock comprovadamente obsoleto antes de gravar\r\n  ---\r\n  duration_ms: 31.2085\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: falha em tempo finito para lock ativo\r\nok 10 - falha em tempo finito para lock ativo\r\n  ---\r\n  duration_ms: 30.468\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: libera o lock ap\u00F3s erro e permite nova opera\u00E7\u00E3o\r\nok 11 - libera o lock ap\u00F3s erro e permite nova opera\u00E7\u00E3o\r\n  ---\r\n  duration_ms: 8.9095\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: ignora tempor\u00E1rio abandonado e nunca o interpreta como mem\u00F3ria\r\nok 12 - ignora tempor\u00E1rio abandonado e nunca o interpreta como mem\u00F3ria\r\n  ---\r\n  duration_ms: 11.0547\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: dois stores n\u00E3o perdem atualiza\u00E7\u00F5es concorrentes\r\nok 13 - dois stores n\u00E3o perdem atualiza\u00E7\u00F5es concorrentes\r\n  ---\r\n  duration_ms: 31.9683\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: preserva a solicita\u00E7\u00E3o original e recupera exact, varia\u00E7\u00E3o trivial e par\u00E1frase de pom.xml\r\nok 14 - preserva a solicita\u00E7\u00E3o original e recupera exact, varia\u00E7\u00E3o trivial e par\u00E1frase de pom.xml\r\n  ---\r\n  duration_ms: 32.1441\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: migra schema v1 preservando conhecimento e usando normalizedPrompt como fallback de originalRequest\r\nok 15 - migra schema v1 preservando conhecimento e usando normalizedPrompt como fallback de originalRequest\r\n  ---\r\n  duration_ms: 6.6068\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: captura prompt literal, multilinha, acentos e sess\u00F5es distintas sem ONNX\r\nok 16 - captura prompt literal, multilinha, acentos e sess\u00F5es distintas sem ONNX\r\n  ---\r\n  duration_ms: 2.7778\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: redige segredo sem persistir o prompt bruto\r\nok 17 - redige segredo sem persistir o prompt bruto\r\n  ---\r\n  duration_ms: 0.3792\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: instala launchers pr\u00F3prios sem criar hook global do usu\u00E1rio\r\nok 18 - instala launchers pr\u00F3prios sem criar hook global do usu\u00E1rio\r\n  ---\r\n  duration_ms: 18.8904\r\n  type: \u0027test\u0027\r\n  ...\r\n# Subtest: desinstala somente os artefatos marcados do AI Dev Assistant\r\nok 19 - desinstala somente os artefatos marcados do AI Dev Assistant\r\n  ---\r\n  duration_ms: 13.4246\r\n  type: \u0027tes\n\u2026[truncated]",
+        "durationMs": 19504,
+        "testResults": {
+          "testFramework": "unknown",
+          "runnerDetectedFrom": "none",
+          "testsTotal": 0,
+          "testsPassed": 0,
+          "testsFailed": 0,
+          "testsSkipped": 0,
+          "parseFailed": true
+        }
+      },
+      {
+        "name": "vsix-packages",
+        "kind": "process",
+        "verificationMethod": "exit-code",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "Executing prepublish script \u0027npm run vscode:prepublish\u0027...\r\n\r\n\u003E ai-dev-assistant@0.1.11 vscode:prepublish\r\n\u003E npm run compile\r\n\r\n\r\n\u003E ai-dev-assistant@0.1.11 compile\r\n\u003E npm run clean \u0026\u0026 tsc -p ./\r\n\r\n\r\n\u003E ai-dev-assistant@0.1.11 clean\r\n\u003E node -e \u0022require(\u0027node:fs\u0027).rmSync(\u0027out\u0027, { recursive: true, force: true })\u0022\r\n\r\n INFO  Files included in the VSIX:\r\nai-dev-assistant-validation.vsix\r\n\u251C\u2500 [Content_Types].xml \r\n\u251C\u2500 extension.vsixmanifest \r\n\u2514\u2500 extension/\r\n   \u251C\u2500 LICENSE.txt [11.29 KB]\r\n   \u251C\u2500 THIRD_PARTY_NOTICES.md [2.06 KB]\r\n   \u251C\u2500 package.json [6.37 KB]\r\n   \u251C\u2500 readme.md [5.01 KB]\r\n   \u251C\u2500 .github/\r\n   \u2502  \u2514\u2500 modernize/ (3 files) [3.24 KB]\r\n   \u251C\u2500 .tsupgrader/\r\n   \u2502  \u2514\u2500 runtime-validation/ (2 files) [1.47 KB]\r\n   \u251C\u2500 agents/\r\n   \u2502  \u2514\u2500 ai-dev-assistant.agent.md [3.45 KB]\r\n   \u251C\u2500 media/\r\n   \u2502  \u2514\u2500 ai-dev-assistant-icon.png [992.9 KB]\r\n   \u251C\u2500 models/\r\n   \u2502  \u2514\u2500 paraphrase-multilingual-minilm/ (3 files) [121.63 MB]\r\n   \u2514\u2500 out/\r\n      \u2514\u2500 src/ (20 files) [91.25 KB]\r\n\r\nThe file extension/models/paraphrase-multilingual-minilm/model.onnx is large (112.97 MB)\r\n\r\n=\u003E Run vsce ls --tree to see all included files.\r\n\r\n DONE  Packaged: C:\\Users\\pjr_d\\AppData\\Local\\Temp\\ai-dev-assistant-validation.vsix (36 files, 74.29 MB)\r\n",
+        "durationMs": 10445
+      }
+    ],
+    "executions": [
+      {
+        "source": "setup[0]",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.CMD",
+        "args": [
+          "ci"
+        ],
+        "cwd": "C:\\Projeto\\git\\ai-dev-assistant\\vscode-extension",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "compile",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.CMD",
+        "args": [
+          "run",
+          "compile"
+        ],
+        "cwd": "C:\\Projeto\\git\\ai-dev-assistant\\vscode-extension",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "tests-pass",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.CMD",
+        "args": [
+          "test"
+        ],
+        "cwd": "C:\\Projeto\\git\\ai-dev-assistant\\vscode-extension",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "vsix-packages",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\node.EXE",
+        "args": [
+          "node_modules/@vscode/vsce/vsce",
+          "package",
+          "--no-dependencies",
+          "--out",
+          "C:\\Users\\pjr_d\\AppData\\Local\\Temp\\ai-dev-assistant-validation.vsix"
+        ],
+        "cwd": "C:\\Projeto\\git\\ai-dev-assistant\\vscode-extension",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      }
+    ]
+  }
+}
