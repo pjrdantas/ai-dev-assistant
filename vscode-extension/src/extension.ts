@@ -51,6 +51,7 @@ export function activate(context: vscode.ExtensionContext): void {
       await installAgentScopedHookRunner(homedir(), process.execPath, runner, configuration);
     },
     disableInstalledHook: () => uninstallAgentScopedHookRunner(homedir()),
+    reportIssue: (issue) => { void vscode.window.showWarningMessage(`Captura automática não reconciliada: ${issue}`); },
   });
   registerMemoryTools(context, service, () => promotions.promotePending());
   context.subscriptions.push(

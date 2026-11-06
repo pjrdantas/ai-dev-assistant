@@ -12,7 +12,7 @@ export interface MongoHookConfiguration {
 }
 
 export class MongoHookConfigurationError extends Error {
-  public constructor(message: string) {
+  public constructor(message: string, public readonly kind: 'missing' | 'unreadable' | 'invalid' | 'validation' = 'validation') {
     super(message);
     this.name = 'MongoHookConfigurationError';
   }
@@ -64,8 +64,8 @@ export async function readMongoHookConfiguration(path: string): Promise<MongoHoo
   try {
     raw = await readFile(path, 'utf8');
   } catch (error) {
-    if (isMissing(error)) throw new MongoHookConfigurationError('Arquivo de configuração MongoDB do hook não encontrado.');
-    throw new MongoHookConfigurationError('Não foi possível ler a configuração MongoDB do hook.');
+    if (isMissing(error)) throw new MongoHookConfigurationError('Arquivo de configuração MongoDB do hook não encontrado.', 'missing');
+    throw new MongoHookConfigurationError('Não foi possível ler a configuração MongoDB do hook.', 'unreadable');
   }
   try {
     const parsed = JSON.parse(raw) as Partial<MongoHookConfiguration> & { schemaVersion?: unknown };
@@ -73,7 +73,7 @@ export async function readMongoHookConfiguration(path: string): Promise<MongoHoo
     return normalizeMongoHookConfiguration(parsed);
   } catch (error) {
     if (error instanceof MongoHookConfigurationError) throw error;
-    throw new MongoHookConfigurationError('Arquivo de configuração MongoDB do hook inválido.');
+    throw new MongoHookConfigurationError('Arquivo de configuração MongoDB do hook inválido.', 'invalid');
   }
 }
 

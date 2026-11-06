@@ -18,6 +18,28 @@ test('instala launchers próprios sem criar hook global do usuário', async () =
   } finally { await rm(home, { recursive: true, force: true }); }
 });
 
+test('B2: rejeita launchers preexistentes sem marcador e preserva todos os artefatos', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-hook-'));
+  try {
+    const installation = installationAt(home);
+    await mkdir(installation.directory, { recursive: true });
+    const powershellBefore = 'launcher powershell de outro produto\r\n';
+    const shellBefore = 'launcher shell de outro produto\n';
+    await writeFile(installation.powershellLauncher, powershellBefore, 'utf8');
+    await writeFile(installation.shellLauncher, shellBefore, 'utf8');
+
+    await assert.rejects(
+      installAgentScopedHookRunner(home, 'node', 'runner.js'),
+      /Launchers preexistentes/,
+    );
+
+    assert.equal(await readFile(installation.powershellLauncher, 'utf8'), powershellBefore);
+    assert.equal(await readFile(installation.shellLauncher, 'utf8'), shellBefore);
+    await assert.rejects(readFile(join(installation.directory, '.ai-dev-assistant-managed'), 'utf8'), { code: 'ENOENT' });
+    await assert.rejects(readFile(installation.mongoConfiguration, 'utf8'), { code: 'ENOENT' });
+  } finally { await rm(home, { recursive: true, force: true }); }
+});
+
 test('desinstala somente os artefatos marcados do AI Dev Assistant', async () => {
   const home = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-hook-'));
   try {

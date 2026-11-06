@@ -17,6 +17,12 @@ export interface InteractionHookInstallation {
 export async function installAgentScopedHookRunner(homeDirectory: string, nodeExecutable: string, runner: string, configuration: MongoHookConfiguration = defaultMongoHookConfiguration()): Promise<InteractionHookInstallation> {
   const normalizedConfiguration = normalizeMongoHookConfiguration(configuration);
   const installation = installationAt(homeDirectory);
+  const markerPath = join(installation.directory, MANAGED_MARKER);
+  const existingMarker = await readOptional(markerPath);
+  const existingLaunchers = await Promise.all([installation.powershellLauncher, installation.shellLauncher].map(readOptional));
+  if (existingMarker !== MANAGED_MARKER_CONTENT && existingLaunchers.some((content) => content !== undefined)) {
+    throw new Error('Launchers preexistentes sem marcador válido do AI Dev Assistant; habilitação recusada para preservar a propriedade dos arquivos.');
+  }
   const paths = [join(installation.directory, MANAGED_MARKER), installation.mongoConfiguration, installation.powershellLauncher, installation.shellLauncher];
   const snapshot = await Promise.all(paths.map(async (path) => ({ path, content: await readOptional(path) })));
   await mkdir(installation.directory, { recursive: true });
