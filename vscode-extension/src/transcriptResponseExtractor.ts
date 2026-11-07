@@ -1,4 +1,12 @@
-import { readFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { readUtf8WithinLimit, InputLimitError } from './boundedInput.js';
+import { containsSensitiveContent } from './sensitiveContent.js';
+
+export const MAX_TRANSCRIPT_BYTES = 4 * 1024 * 1024;
+export const MAX_TRANSCRIPT_LINES = 10_000;
+export const MAX_JSON_DEPTH = 100;
+export const MAX_JSON_NODES = 50_000;
+export const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export type TranscriptExtraction =
   | { readonly kind: 'FOUND'; readonly response: string }
@@ -22,8 +30,22 @@ export class TranscriptResponseExtractor {
     let content: string;
 
     try {
-      content = await readFile(path, 'utf8');
+      const stream = createReadStream(path, {
+        highWaterMark: 64 * 1024,
+      });
+      try {
+        content = await readUtf8WithinLimit(stream, MAX_TRANSCRIPT_BYTES);
+      } catch (error) {
+        stream.destroy();
+        throw error;
+      }
     } catch (error) {
+      if (error instanceof InputLimitError) {
+        return {
+          kind: 'UNAVAILABLE',
+          reason: 'TRANSCRIPT_TOO_LARGE',
+        };
+      }
       return {
         kind: 'UNAVAILABLE',
         reason: fileReason(error),
@@ -39,20 +61,31 @@ export class TranscriptResponseExtractor {
 
     const values = parseValues(content);
 
-    if (values === undefined) {
+    if (values.kind !== 'VALUES') {
       return {
         kind: 'UNAVAILABLE',
-        reason: 'TRANSCRIPT_UNRECOGNIZED',
+        reason: values.reason,
       };
     }
 
-    const response = findAssistantTexts(values).at(-1)?.trim();
+    const response = findAssistantTexts(values.values).at(-1)?.trim();
 
     if (response === undefined || response === '') {
       return {
         kind: 'UNAVAILABLE',
         reason: 'FINAL_RESPONSE_NOT_FOUND',
       };
+    }
+
+    if (Buffer.byteLength(response, 'utf8') > MAX_RESPONSE_BYTES) {
+      return {
+        kind: 'UNAVAILABLE',
+        reason: 'FINAL_RESPONSE_TOO_LARGE',
+      };
+    }
+
+    if (containsSensitiveContent(response)) {
+      return { kind: 'UNAVAILABLE', reason: 'SENSITIVE_RESPONSE' };
     }
 
     return {
@@ -62,28 +95,111 @@ export class TranscriptResponseExtractor {
   }
 }
 
-function parseValues(content: string): readonly unknown[] | undefined {
+type ParsedValues =
+  | { readonly kind: 'VALUES'; readonly values: readonly unknown[] }
+  | { readonly kind: 'UNAVAILABLE'; readonly reason: string };
+
+function parseValues(content: string): ParsedValues {
+  const wholeDocumentShape = jsonShapeLimit(content);
+  if (wholeDocumentShape !== undefined) {
+    return { kind: 'UNAVAILABLE', reason: wholeDocumentShape };
+  }
+
   try {
-    return [JSON.parse(content)];
+    return { kind: 'VALUES', values: [JSON.parse(content)] };
   } catch {
     // JSONL is a common transcript transport, but not an API contract.
   }
 
   const values: unknown[] = [];
+  let lineCount = 0;
+  let nodeCount = 0;
 
   for (const line of content.split(/\r?\n/)) {
     if (line.trim() === '') {
       continue;
     }
 
+    lineCount += 1;
+    if (lineCount > MAX_TRANSCRIPT_LINES) {
+      return { kind: 'UNAVAILABLE', reason: 'TRANSCRIPT_TOO_MANY_LINES' };
+    }
+
+    const lineShape = jsonShapeLimit(line);
+    if (lineShape !== undefined) {
+      return { kind: 'UNAVAILABLE', reason: lineShape };
+    }
+    nodeCount += countJsonNodes(line);
+    if (nodeCount > MAX_JSON_NODES) {
+      return { kind: 'UNAVAILABLE', reason: 'TRANSCRIPT_TOO_MANY_OBJECTS' };
+    }
+
     try {
       values.push(JSON.parse(line));
     } catch {
-      return undefined;
+      return { kind: 'UNAVAILABLE', reason: 'TRANSCRIPT_UNRECOGNIZED' };
     }
   }
 
-  return values.length === 0 ? undefined : values;
+  return values.length === 0
+    ? { kind: 'UNAVAILABLE', reason: 'TRANSCRIPT_UNRECOGNIZED' }
+    : { kind: 'VALUES', values };
+}
+
+function jsonShapeLimit(content: string): 'TRANSCRIPT_TOO_DEEP' | 'TRANSCRIPT_TOO_MANY_OBJECTS' | undefined {
+  let depth = 0;
+  let nodeCount = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (const character of content) {
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+    } else if (character === '{' || character === '[') {
+      depth += 1;
+      if (depth > MAX_JSON_DEPTH) {
+        return 'TRANSCRIPT_TOO_DEEP';
+      }
+      nodeCount += 1;
+      if (nodeCount > MAX_JSON_NODES) {
+        return 'TRANSCRIPT_TOO_MANY_OBJECTS';
+      }
+    } else if (character === '}' || character === ']') {
+      depth = Math.max(0, depth - 1);
+    }
+  }
+
+  return undefined;
+}
+
+function countJsonNodes(content: string): number {
+  let nodeCount = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (const character of content) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') inString = true;
+    else if (character === '{' || character === '[') nodeCount += 1;
+  }
+
+  return nodeCount;
 }
 
 function findAssistantTexts(values: readonly unknown[]): string[] {

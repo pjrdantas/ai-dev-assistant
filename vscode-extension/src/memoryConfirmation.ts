@@ -1,0 +1,1 @@
+export const MANUAL_SAVE_CONFIRMATION_MESSAGE = 'Salvar a solução reutilizável no perfil local do VS Code? Toda memória manual será gravada como MANUAL/SHARED e ficará disponível entre projetos, mesmo quando um workspace estiver identificado.';

@@ -12,5 +12,5 @@ export interface ProjectContext {
 }
 
 export interface ProjectContextProvider {
-  capture(): Promise<ProjectContext | undefined>;
+  capture(workspaceKey?: string): Promise<ProjectContext | undefined>;
 }

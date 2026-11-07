@@ -151,6 +151,17 @@ test('bloqueia segredo, falha de embedding e falha de armazenamento', async () =
   await assert.rejects(() => storageFailure.save('Pergunta segura', 'Solução segura'), /storage unavailable/);
 });
 
+test('não devolve memória legada que contenha credencial sintética', async () => {
+  const unsafe = knowledge('unsafe', `Authorization: Bearer ${'q'.repeat(24)}`);
+  const service = new LocalMemoryService(
+    memory({ matches: [match(unsafe, 0.99, true)] }), embeddings(), contextProvider(javaContext('21')),
+  );
+
+  assert.deepEqual(await service.search('Como configurar o cliente?'), {
+    matchType: 'NONE', contextCompatible: false,
+  });
+});
+
 test('MongoDB indisponível não impede o agent loop de receber estado claro', async () => {
   const unavailable = new LocalMemoryService({
     async findExact(): Promise<undefined> { throw new MongoMemoryUnavailableError(new Error('connection refused')); },

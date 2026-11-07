@@ -30,7 +30,8 @@ disponível. Não instale Java, backend, Docker ou daemon do AI Dev Assistant. M
    confirme a inicialização lazy de ONNX somente nesse momento.
 11. Salve uma solução reutilizável pela tool, feche e reabra o VS Code. Confirme que o
    agente aparece sem carregar ONNX e que a memória local persiste.
-12. Confirme a ausência de Activity Bar e WebView próprias.
+12. Confirme a presença do ícone nativo do AI Dev Assistant na Activity Bar, com sua
+    TreeView de administração, e a ausência de WebView ou chat paralelo próprios.
 
 ## Confirmação das tools de memória
 

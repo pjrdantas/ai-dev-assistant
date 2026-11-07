@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
 
 import { LocalMemoryService } from './localMemoryService.js';
+import { MANUAL_SAVE_CONFIRMATION_MESSAGE } from './memoryConfirmation.js';
 import { stripToolReference } from './toolReferenceUtils.js';
 
 export { stripToolReference } from './toolReferenceUtils.js';
 
 export const SEARCH_MEMORY_TOOL = 'ai-dev-assistant_searchMemory';
 export const SAVE_MEMORY_TOOL = 'ai-dev-assistant_saveMemory';
+export { MANUAL_SAVE_CONFIRMATION_MESSAGE } from './memoryConfirmation.js';
 
 export interface SearchMemoryInput {
   readonly request: string;
@@ -52,7 +54,7 @@ export class SaveMemoryTool implements vscode.LanguageModelTool<SaveMemoryInput>
       invocationMessage: 'Salvando conhecimento reutilizável na memória local',
       confirmationMessages: {
         title: 'Salvar conhecimento local',
-        message: new vscode.MarkdownString('Salvar a solução reutilizável no perfil local do VS Code?'),
+        message: new vscode.MarkdownString(MANUAL_SAVE_CONFIRMATION_MESSAGE),
       },
     };
   }

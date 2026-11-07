@@ -25,6 +25,7 @@
   ],
   "main": "./out/src/extension.js",
   "activationEvents": [
+    "onView:aiDevAssistant.view",
     "onLanguageModelTool:ai-dev-assistant_searchMemory",
     "onLanguageModelTool:ai-dev-assistant_saveMemory"
   ],
@@ -90,6 +91,23 @@
         "path": "./agents/ai-dev-assistant.agent.md"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiDevAssistant",
+          "title": "AI Dev Assistant",
+          "icon": "./media/assistant.svg"
+        }
+      ]
+    },
+    "views": {
+      "aiDevAssistant": [
+        {
+          "id": "aiDevAssistant.view",
+          "name": "Controle"
+        }
+      ]
+    },
     "languageModelTools": [
       {
         "name": "ai-dev-assistant_searchMemory",
@@ -161,7 +179,7 @@
     "compile": "npm run clean && tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test": "npm run compile && node --test \"out/test/*.test.js\"",
-    "package:vsix": "vsce package",
+    "package:vsix": "vsce package --dependencies",
     "verify": "npm test && npm run package:vsix"
   },
   "devDependencies": {

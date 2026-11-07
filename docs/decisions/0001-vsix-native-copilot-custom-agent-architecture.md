@@ -13,9 +13,17 @@ As tools `searchMemory` e `saveMemory` usam os IDs internos válidos
 complementam o Agent; não substituem descoberta, pesquisa, leitura de arquivos fechados,
 edição multiarquivo, terminal, build ou testes.
 
-O GitHub Copilot é a única IA. Não existem backend, WebView, Activity Bar própria,
-provider de IA, seletor de modelo, Java, Spring, Lucene, Docker ou daemon empacotado no
-produto final. MongoDB local foi adotado posteriormente como store externo ativo pela
+O VSIX também contribui o container nativo `aiDevAssistant` na Activity Bar e a view
+`aiDevAssistant.view`, implementada com `TreeDataProvider`. Essa central oferece somente
+atalhos explícitos para comandos existentes, status/controle da memória e captura, além
+de abrir o comando público `workbench.action.chat.open`. Ela não contém chat próprio,
+não seleciona modelo e não executa efeitos colaterais ao ser aberta; a seleção do agente
+AI Dev Assistant continua sendo feita pelo usuário no Chat nativo do GitHub Copilot.
+
+O GitHub Copilot é a única IA. Não existem backend, WebView de chat, chat paralelo
+próprio, provider de IA, seletor de modelo, Java, Spring, Lucene, Docker ou daemon
+empacotado no produto final. O container nativo de administração na Activity Bar é
+permitido conforme descrito acima. MongoDB local foi adotado posteriormente como store externo ativo pela
 ADR 0002.
 
 ## Motivos

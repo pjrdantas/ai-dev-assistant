@@ -3,6 +3,22 @@ import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'nod
 import { basename, dirname, join } from 'node:path';
 
 import { ProjectContext } from './contracts.js';
+import { containsSensitiveContent } from './sensitiveContent.js';
+
+export type MemoryProvenance = 'AUTO_PROMOTED' | 'MANUAL' | 'LEGACY';
+export type MemoryScope = 'WORKSPACE' | 'SHARED' | 'LEGACY_UNSCOPED';
+
+export interface MemoryLookupScope {
+  readonly workspaceKey?: string;
+  readonly includeLegacy?: boolean;
+  readonly deduplication?: MemorySaveOptions;
+}
+
+export interface MemorySaveOptions {
+  readonly provenance: Exclude<MemoryProvenance, 'LEGACY'>;
+  readonly scope: Exclude<MemoryScope, 'LEGACY_UNSCOPED'>;
+  readonly workspaceKey?: string;
+}
 
 const SCHEMA_VERSION = 2;
 export const MAX_CORRUPTION_BACKUPS = 5;
@@ -29,14 +45,18 @@ export interface LocalKnowledge {
   readonly revision?: number;
   readonly invalidatedAt?: string;
   readonly embedding?: readonly number[];
+  readonly provenance?: MemoryProvenance;
+  readonly scope?: MemoryScope;
+  readonly workspaceKey?: string;
 }
 
 export interface LocalMemoryStore {
-  findExact(normalizedPrompt: string, context: ProjectContext | undefined): Promise<LocalKnowledge | undefined>;
+  findExact(normalizedPrompt: string, context: ProjectContext | undefined, lookup?: MemoryLookupScope): Promise<LocalKnowledge | undefined>;
 
   findSimilar(
     embedding: readonly number[],
     context: ProjectContext | undefined,
+    lookup?: MemoryLookupScope,
   ): Promise<readonly LocalMemoryMatch[]>;
 
   registerReuse(id: string): Promise<LocalKnowledge | undefined>;
@@ -47,6 +67,7 @@ export interface LocalMemoryStore {
     context: ProjectContext | undefined,
     response: string,
     embedding: readonly number[],
+    options?: MemorySaveOptions,
   ): Promise<LocalKnowledge>;
   replace?(id: string, response: string, embedding: readonly number[]): Promise<LocalKnowledge | undefined>;
 }
@@ -85,14 +106,18 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
   public async findExact(
     normalizedPrompt: string,
     context: ProjectContext | undefined,
+    lookup: MemoryLookupScope = {},
   ): Promise<LocalKnowledge | undefined> {
     const contextKey = projectContextKey(context);
     const state = await this.read();
-    const entry = state.entries.find((candidate) =>
+    const entries = state.entries.filter((candidate) =>
       candidate.invalidatedAt === undefined
       && candidate.normalizedPrompt === normalizedPrompt
-      && candidate.contextKey === contextKey);
-    if (entry === undefined) {
+      && candidate.contextKey === contextKey
+      && isMemoryAccessible(candidate, lookup)
+      && isDeduplicationMatch(candidate, lookup));
+    const entry = selectPreferredMemory(entries, lookup);
+    if (entry === undefined || containsSensitiveMemory(entry)) {
       return undefined;
     }
     return this.updateReuse(entry.id);
@@ -104,12 +129,23 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
     context: ProjectContext | undefined,
     response: string,
     embedding: readonly number[],
+    options: MemorySaveOptions = { provenance: 'MANUAL', scope: 'SHARED' },
   ): Promise<LocalKnowledge> {
+    rejectSensitiveMemory(originalRequest, normalizedPrompt, response);
+    const validatedEmbedding = validateEmbedding(embedding);
     return this.serialize(async () => {
       const state = await this.read();
       const contextKey = projectContextKey(context);
+      const sensitiveConflict = state.entries.find((candidate) =>
+        candidate.normalizedPrompt === normalizedPrompt
+        && candidate.contextKey === contextKey
+        && containsSensitiveMemory(candidate));
+      if (sensitiveConflict !== undefined) {
+        throw new Error('Conteúdo potencialmente sensível não pode ser reutilizado na memória local.');
+      }
       const existing = state.entries.find((candidate) =>
-        candidate.normalizedPrompt === normalizedPrompt && candidate.contextKey === contextKey);
+        candidate.normalizedPrompt === normalizedPrompt && candidate.contextKey === contextKey
+        && sameDeduplicationScope(candidate, options));
       if (existing !== undefined) {
         return this.writeUpdatedReuse(state, existing.id);
       }
@@ -123,7 +159,10 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
         createdAt: timestamp,
         lastUsedAt: timestamp,
         reuseCount: 0,
-        embedding: validateEmbedding(embedding),
+        embedding: validatedEmbedding,
+        provenance: options.provenance,
+        scope: options.scope,
+        workspaceKey: options.workspaceKey,
       };
       await this.write(state, [...state.entries, entry]);
       return entry;
@@ -133,6 +172,7 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
   public async findSimilar(
     embedding: readonly number[],
     context: ProjectContext | undefined,
+    lookup: MemoryLookupScope = {},
   ): Promise<readonly LocalMemoryMatch[]> {
     const query = validateEmbedding(embedding);
     const state = await this.read();
@@ -142,6 +182,7 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
       if (entry.invalidatedAt !== undefined || entry.embedding === undefined || entry.embedding.length !== query.length) {
         continue;
       }
+      if (!isMemoryAccessible(entry, lookup) || !isDeduplicationMatch(entry, lookup) || containsSensitiveMemory(entry)) continue;
       const similarity = cosineSimilarity(query, entry.embedding);
       matches.push({
         knowledge: entry,
@@ -149,19 +190,25 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
         contextCompatible: entry.contextKey === contextKey,
       });
     }
-    return matches.sort((left, right) => right.similarity - left.similarity);
+    return matches.sort((left, right) => memoryPriority(right.knowledge, lookup) - memoryPriority(left.knowledge, lookup)
+      || right.similarity - left.similarity
+      || left.knowledge.id.localeCompare(right.knowledge.id));
   }
 
   public async registerReuse(id: string): Promise<LocalKnowledge | undefined> {
-    return this.updateReuse(id);
+    const state = await this.read();
+    const entry = state.entries.find((candidate) => candidate.id === id);
+    return entry === undefined || containsSensitiveMemory(entry) ? undefined : this.updateReuse(id);
   }
 
   public async replace(id: string, response: string, embedding: readonly number[]): Promise<LocalKnowledge | undefined> {
+    if (containsSensitiveContent(response)) throw new Error('Conteúdo potencialmente sensível não pode ser usado na memória local.');
     return this.serialize(async () => {
       const state = await this.read();
       let replacement: LocalKnowledge | undefined;
       const entries = state.entries.map((entry) => {
         if (entry.id !== id) return entry;
+        if (containsSensitiveMemory(entry)) throw new Error('Conteúdo potencialmente sensível não pode ser usado na memória local.');
         replacement = { ...entry, response, embedding: validateEmbedding(embedding), updatedAt: this.now().toISOString(), revision: (entry.revision ?? 0) + 1, invalidatedAt: undefined };
         return replacement;
       });
@@ -342,6 +389,43 @@ export function projectContextKey(context: ProjectContext | undefined): string {
   });
 }
 
+export function memoryProvenance(entry: Pick<LocalKnowledge, 'provenance'>): MemoryProvenance {
+  return entry.provenance ?? 'LEGACY';
+}
+
+export function memoryScope(entry: Pick<LocalKnowledge, 'scope'>): MemoryScope {
+  return entry.scope ?? 'LEGACY_UNSCOPED';
+}
+
+export function isMemoryAccessible(entry: Pick<LocalKnowledge, 'provenance' | 'scope' | 'workspaceKey'>, lookup: MemoryLookupScope): boolean {
+  const provenance = memoryProvenance(entry);
+  const scope = memoryScope(entry);
+  if (provenance === 'LEGACY') return lookup.includeLegacy !== false;
+  if (scope === 'SHARED') return true;
+  return scope === 'WORKSPACE' && lookup.workspaceKey !== undefined && entry.workspaceKey === lookup.workspaceKey;
+}
+
+export function isDeduplicationMatch(entry: Pick<LocalKnowledge, 'provenance' | 'scope' | 'workspaceKey'>, lookup: MemoryLookupScope): boolean {
+  return lookup.deduplication === undefined || sameDeduplicationScope(entry, lookup.deduplication);
+}
+
+export function sameDeduplicationScope(entry: Pick<LocalKnowledge, 'provenance' | 'scope' | 'workspaceKey'>, options: MemorySaveOptions): boolean {
+  return memoryProvenance(entry) === options.provenance
+    && memoryScope(entry) === options.scope
+    && entry.workspaceKey === options.workspaceKey;
+}
+
+function selectPreferredMemory(entries: readonly LocalKnowledge[], lookup: MemoryLookupScope): LocalKnowledge | undefined {
+  return [...entries].sort((left, right) => memoryPriority(right, lookup) - memoryPriority(left, lookup)
+    || left.id.localeCompare(right.id))[0];
+}
+
+function memoryPriority(entry: Pick<LocalKnowledge, 'provenance' | 'scope' | 'workspaceKey'>, lookup: MemoryLookupScope): number {
+  if (lookup.workspaceKey !== undefined && memoryScope(entry) === 'WORKSPACE' && entry.workspaceKey === lookup.workspaceKey) return 2;
+  if (memoryScope(entry) === 'SHARED') return 1;
+  return 0;
+}
+
 function normalizeTechnologies(technologies: readonly { readonly name: string; readonly version?: string }[]): readonly object[] {
   return technologies
     .map((technology) => ({ name: technology.name, version: technology.version ?? '' }))
@@ -430,5 +514,17 @@ function isMissingFile(error: unknown): boolean {
 function isAlreadyExists(error: unknown): boolean { return typeof error === 'object' && error !== null && 'code' in error && (error as { readonly code?: unknown }).code === 'EEXIST'; }
 
 function escapeRegularExpression(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function containsSensitiveMemory(entry: Pick<LocalKnowledge, 'originalRequest' | 'normalizedPrompt' | 'response'>): boolean {
+  return containsSensitiveContent(entry.originalRequest)
+    || containsSensitiveContent(entry.normalizedPrompt)
+    || containsSensitiveContent(entry.response);
+}
+
+function rejectSensitiveMemory(originalRequest: string, normalizedPrompt: string, response: string): void {
+  if (containsSensitiveContent(originalRequest) || containsSensitiveContent(normalizedPrompt) || containsSensitiveContent(response)) {
+    throw new Error('Conteúdo potencialmente sensível não pode ser usado na memória local.');
+  }
+}
 
 function delay(milliseconds: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }

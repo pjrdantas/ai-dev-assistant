@@ -1,7 +1,11 @@
 import { MongoClient } from 'mongodb';
+import { readUtf8WithinLimit } from './boundedInput.js';
 
 import { interactionFromUserPrompt, UserPromptSubmitInput } from './interactionCapture.js';
 import { TranscriptResponseExtractor } from './transcriptResponseExtractor.js';
+import { loadMongoHookConfiguration, MongoHookConfigurationError } from './mongoHookConfiguration.js';
+
+export const MAX_STDIN_BYTES = 1 * 1024 * 1024;
 
 interface StopInput { readonly hook_event_name: 'Stop'; readonly session_id?: string; readonly transcript_path?: string; readonly timestamp?: string; }
 
@@ -9,10 +13,11 @@ async function main(): Promise<void> {
   try {
     const input = JSON.parse(await readStdin()) as UserPromptSubmitInput | StopInput;
     if (input.hook_event_name !== 'UserPromptSubmit' && input.hook_event_name !== 'Stop') return;
-    const client = new MongoClient(process.env.AI_DEV_ASSISTANT_MONGODB_URI ?? 'mongodb://127.0.0.1:27017', { serverSelectionTimeoutMS: 1_500, connectTimeoutMS: 1_500, appName: 'AI Dev Assistant Hook' });
+    const configuration = await loadMongoHookConfiguration(mongoConfigurationArgument());
+    const client = new MongoClient(configuration.uri, { serverSelectionTimeoutMS: 1_500, connectTimeoutMS: 1_500, appName: 'AI Dev Assistant Hook' });
     try {
       await client.connect();
-      const interactions = client.db(process.env.AI_DEV_ASSISTANT_MONGODB_DATABASE ?? 'ai_dev_assistant').collection('interactions');
+      const interactions = client.db(configuration.database).collection('interactions');
       if (input.hook_event_name === 'UserPromptSubmit') {
         if (typeof input.prompt !== 'string') return;
         const interaction = interactionFromUserPrompt(input);
@@ -28,10 +33,21 @@ async function main(): Promise<void> {
       await interactions.findOneAndUpdate({ sessionId: input.session_id, status: 'PENDING' }, update, { sort: { createdAt: -1 }, returnDocument: 'after' });
     } finally { await client.close(); }
   } catch (error) {
-    process.stderr.write(`AI Dev Assistant interaction capture unavailable: ${error instanceof Error ? error.message : 'unknown error'}\n`);
+    process.stderr.write(`AI Dev Assistant interaction capture unavailable: ${error instanceof MongoHookConfigurationError ? error.message : 'MongoDB indisponível.'}\n`);
   }
 }
 
-function readStdin(): Promise<string> { return new Promise((resolve, reject) => { let data = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (chunk) => { data += chunk; }); process.stdin.on('end', () => resolve(data)); process.stdin.on('error', reject); }); }
+function readStdin(): Promise<string> {
+  return readUtf8WithinLimit(process.stdin, MAX_STDIN_BYTES);
+}
+
+function mongoConfigurationArgument(): string {
+  const index = process.argv.indexOf('--mongo-config');
+  const argument = index >= 0 ? process.argv[index + 1] : undefined;
+  if (argument === undefined || argument.startsWith('--')) {
+    throw new MongoHookConfigurationError('O runner exige --mongo-config com um caminho explícito.');
+  }
+  return argument;
+}
 
 void main().finally(() => { process.stdout.write('{"continue":true}\n'); });

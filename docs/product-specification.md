@@ -9,7 +9,9 @@ pelo usuário no seletor nativo do Copilot.
 O agente conserva as capacidades nativas apropriadas para desenvolvimento: descoberta e
 pesquisa no workspace, leitura de arquivos, edição de múltiplos arquivos, terminal,
 build e testes, conforme permissões normais do VS Code. Não há backend, serviço próprio,
-WebView, Activity Bar própria, container ou daemon empacotado. MongoDB local é um
+WebView de chat, chat paralelo próprio ou daemon empacotado. A extensão pode contribuir
+um container nativo de administração na Activity Bar, com TreeView, sem interface de
+conversa própria. MongoDB local é um
 pré-requisito externo para persistir a memória.
 
 ## Memória local

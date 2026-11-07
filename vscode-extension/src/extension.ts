@@ -5,42 +5,86 @@ import { OnnxLocalEmbeddingProvider } from './localEmbeddingProvider.js';
 import { LocalMemoryService } from './localMemoryService.js';
 import { registerMemoryTools } from './memoryTools.js';
 import { migrateJsonMemory } from './jsonMemoryMigration.js';
-import { MongoConnectionManager } from './mongoConnectionManager.js';
+import { MongoConnectionManager, redactUri } from './mongoConnectionManager.js';
 import { MongoInteractionStore } from './mongoInteractionStore.js';
-import { workspaceKey } from './interactionCapture.js';
-import { installAgentScopedHookRunner, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from './interactionHookInstallation.js';
+import { installAgentScopedHookRunner, installationAt, isAgentScopedHookRunnerInstalled, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from './interactionHookInstallation.js';
 import { InteractionPromotionService } from './interactionPromotionService.js';
 import { MongoMemoryStore } from './mongoMemoryStore.js';
 import { memoryDisplayTitle } from './memoryDisplay.js';
 import { estimateStoredMemoryTokens } from './tokenEstimation.js';
 import { VscodeProjectContextProvider } from './vscodeProjectContextProvider.js';
+import { DEFAULT_MONGO_DATABASE, DEFAULT_MONGO_URI, normalizeMongoHookConfiguration, readMongoHookConfiguration } from './mongoHookConfiguration.js';
+import { MongoHookConfigurationCoordinator } from './mongoHookConfigurationCoordinator.js';
+import { ControlCenterTreeModel } from './controlCenter.js';
+
+class ControlCenterTreeItem extends vscode.TreeItem {
+  public constructor(action: ReturnType<ControlCenterTreeModel['getChildren']>[number]) {
+    super(action.label, vscode.TreeItemCollapsibleState.None);
+    this.description = action.description;
+    this.tooltip = action.description;
+    this.iconPath = new vscode.ThemeIcon(action.icon);
+    this.command = { command: action.command, title: action.label };
+    this.contextValue = 'aiDevAssistant.controlCenterAction';
+  }
+}
+
+class ControlCenterTreeDataProvider implements vscode.TreeDataProvider<ControlCenterTreeItem> {
+  public readonly onDidChangeTreeData = new vscode.EventEmitter<ControlCenterTreeItem | undefined | null | void>().event;
+
+  public constructor(private readonly model: ControlCenterTreeModel) {}
+
+  public getTreeItem(element: ControlCenterTreeItem): vscode.TreeItem { return element; }
+
+  public getChildren(_element?: ControlCenterTreeItem): ControlCenterTreeItem[] {
+    return this.model.getChildren().map((action) => new ControlCenterTreeItem(action));
+  }
+}
 
 export function activate(context: vscode.ExtensionContext): void {
-  const settings = vscode.workspace.getConfiguration('aiDevAssistant.mongodb');
-  const connection = new MongoConnectionManager({
-    uri: settings.get<string>('uri', 'mongodb://127.0.0.1:27017'),
-    database: settings.get<string>('database', 'ai_dev_assistant'),
+  const output = vscode.window.createOutputChannel('AI Dev Assistant');
+  const extensionVersion = typeof context.extension.packageJSON?.version === 'string' ? context.extension.packageJSON.version : 'unknown';
+  output.appendLine(`AI Dev Assistant extension active: id=${context.extension.id}, version=${extensionVersion}`);
+  const mongoConfiguration = () => normalizeMongoHookConfiguration({
+    uri: vscode.workspace.getConfiguration('aiDevAssistant.mongodb').get<string>('uri', DEFAULT_MONGO_URI),
+    database: vscode.workspace.getConfiguration('aiDevAssistant.mongodb').get<string>('database', DEFAULT_MONGO_DATABASE),
   });
+  const effectiveMongoConfiguration = mongoConfiguration();
+  output.appendLine(`MongoDB effective configuration: uri=${redactUri(effectiveMongoConfiguration.uri)}, database=${effectiveMongoConfiguration.database}`);
+  const connection = new MongoConnectionManager(effectiveMongoConfiguration, undefined, (line) => output.appendLine(line));
   const memory = new MongoMemoryStore(connection);
   const interactions = new MongoInteractionStore(connection);
   const embeddings = new OnnxLocalEmbeddingProvider(
     vscode.Uri.joinPath(context.extensionUri, 'models', 'paraphrase-multilingual-minilm').fsPath,
   );
-  const output = vscode.window.createOutputChannel('AI Dev Assistant');
+  const projectContext = new VscodeProjectContextProvider();
   const service = new LocalMemoryService(
     memory,
     embeddings,
-    new VscodeProjectContextProvider(),
+    projectContext,
     (diagnostic) => {
       const compatible = diagnostic.candidates.filter((candidate) => candidate.contextCompatible).length;
       const bestSimilarity = diagnostic.candidates[0]?.similarity;
       output.appendLine(`Mongo memory search: documentsFetched=${diagnostic.candidates.length} activeCandidates=${diagnostic.candidates.length} contextCompatibleCandidates=${compatible} bestSimilarity=${bestSimilarity ?? 'none'} matchType=${diagnostic.matchType} reason=${diagnostic.reason}`);
     },
   );
-  const promotions = new InteractionPromotionService(interactions, service);
+  const promotions = new InteractionPromotionService(interactions, service, () => projectContext.currentWorkspaceKeys(), () => projectContext.currentWorkspaceOrigins());
+  const configurationCoordinator = new MongoHookConfigurationCoordinator({
+    readConfiguration: mongoConfiguration,
+    getActiveConfiguration: () => connection.currentConfiguration(),
+    isInstalled: () => isAgentScopedHookRunnerInstalled(homedir()),
+    readInstalledConfiguration: () => readMongoHookConfiguration(installationAt(homedir()).mongoConfiguration),
+    updateConnection: (configuration) => connection.updateConfiguration(configuration),
+    syncInstalledHook: async (configuration) => {
+      const runner = vscode.Uri.joinPath(context.extensionUri, 'out', 'src', 'interactionHookRunner.js').fsPath;
+      await installAgentScopedHookRunner(homedir(), process.execPath, runner, configuration);
+    },
+    disableInstalledHook: () => uninstallAgentScopedHookRunner(homedir()),
+    reportIssue: (issue) => { void vscode.window.showWarningMessage(`Captura automática não reconciliada: ${issue}`); },
+  });
   registerMemoryTools(context, service, () => promotions.promotePending());
   context.subscriptions.push(
     output,
+    vscode.window.registerTreeDataProvider('aiDevAssistant.view', new ControlCenterTreeDataProvider(new ControlCenterTreeModel())),
     vscode.commands.registerCommand('aiDevAssistant.showMemoryStatistics', async () => {
       try {
         const stats = await memory.statistics();
@@ -241,8 +285,12 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('aiDevAssistant.showInteractionStatistics', async () => {
       try {
-        const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        const stats = await interactions.statistics(workspaceKey(cwd));
+        const selectedWorkspaceKey = projectContext.currentSearchWorkspaceKey();
+        if (selectedWorkspaceKey === undefined) {
+          await vscode.window.showInformationMessage('Estatísticas indisponíveis: não foi possível identificar um único workspace selecionado.');
+          return;
+        }
+        const stats = await interactions.statistics(selectedWorkspaceKey, projectContext.currentWorkspaceOrigins());
         await vscode.window.showInformationMessage(`Interações: ${stats.total} total, ${stats.pending} pendente(s), ${stats.completed} concluída(s), ${stats.unavailable} falha(s)/indisponível(is). Última: ${stats.last?.createdAt.toISOString() ?? 'nenhuma'}.`);
       } catch (error) { await vscode.window.showWarningMessage(`Interações MongoDB indisponíveis: ${message(error)}`); }
     }),
@@ -256,18 +304,7 @@ export function activate(context: vscode.ExtensionContext): void {
   if (choice !== 'Habilitar') return;
 
   try {
-    const runner = vscode.Uri.joinPath(
-      context.extensionUri,
-      'out',
-      'src',
-      'interactionHookRunner.js',
-    ).fsPath;
-
-    await installAgentScopedHookRunner(
-      homedir(),
-      process.execPath,
-      runner,
-    );
+    await configurationCoordinator.enable();
 
     await removeLegacyGlobalInteractionHook(homedir());
 
@@ -280,14 +317,20 @@ export function activate(context: vscode.ExtensionContext): void {
     );
   }
 }),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event.affectsConfiguration('aiDevAssistant.mongodb')) return;
+      void configurationCoordinator.reconcile().catch((error) => void vscode.window.showWarningMessage(`Não foi possível atualizar a configuração MongoDB: ${message(error)}`));
+    }),
     vscode.commands.registerCommand('aiDevAssistant.disableAutomaticInteractionCapture', async () => {
       try {
-        const [removed, legacyRemoved] = await Promise.all([uninstallAgentScopedHookRunner(homedir()), removeLegacyGlobalInteractionHook(homedir())]);
+        const removed = await configurationCoordinator.disable();
+        const legacyRemoved = await removeLegacyGlobalInteractionHook(homedir());
         await vscode.window.showInformationMessage(removed || legacyRemoved ? 'Captura automática desabilitada. Somente artefatos do AI Dev Assistant foram removidos.' : 'Não foram encontrados artefatos de captura gerenciados pelo AI Dev Assistant.');
       } catch (error) { await vscode.window.showWarningMessage(`Não foi possível desabilitar a captura automática: ${message(error)}`); }
     }),
     new vscode.Disposable(() => { void connection.close(); }),
   );
+  void configurationCoordinator.reconcile().catch((error) => void vscode.window.showWarningMessage(`Não foi possível reconciliar a configuração MongoDB: ${message(error)}`));
 }
 
 function formatNumber(value: number): string { return value.toLocaleString('pt-BR'); }

@@ -118,6 +118,76 @@ test('libera o lock após erro e permite nova operação', async () => {
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test('rejeita resposta sensível no replace sem alterar conteúdo, revisão ou estado', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-store-'));
+  try {
+    const path = join(directory, 'knowledge-v1.json');
+    const store = new FileLocalMemoryStore(path);
+    const entry = await store.save('Prompt seguro', 'prompt seguro', context, 'resposta anterior', [1, 0]);
+    const beforeContent = await readFile(path, 'utf8');
+    const beforeStats = await store.statistics();
+
+    await assert.rejects(
+      store.replace(entry.id, `Authorization: Bearer ${'s'.repeat(24)}`, [0, 1]),
+      /sensível/,
+    );
+
+    assert.equal(await readFile(path, 'utf8'), beforeContent);
+    assert.deepEqual(await store.statistics(), beforeStats);
+    assert.equal((await store.findExact('prompt seguro', context))?.response, 'resposta anterior');
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('falha com segurança ao salvar sobre legado sensível sem atualizar reuse', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-store-'));
+  try {
+    const path = join(directory, 'knowledge-v1.json');
+    const legacy = {
+      schemaVersion: 2,
+      revision: 7,
+      entries: [{
+        id: 'legacy-sensitive',
+        originalRequest: 'prompt legado',
+        normalizedPrompt: 'prompt legado',
+        contextKey: '{"buildTool":"NPM","frameworks":[],"languages":[{"name":"NODE","version":"22"}]}',
+        response: `token=${'t'.repeat(24)}`,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        lastUsedAt: '2026-01-01T00:00:00.000Z',
+        reuseCount: 3,
+        embedding: [1, 0],
+        provenance: 'LEGACY',
+        scope: 'LEGACY_UNSCOPED',
+      }],
+    };
+    await writeFile(path, JSON.stringify(legacy), 'utf8');
+    const store = new FileLocalMemoryStore(path);
+    const beforeContent = await readFile(path, 'utf8');
+
+    await assert.rejects(
+      store.save('novo pedido', 'prompt legado', context, 'resposta segura', [1, 0]),
+      /sensível/,
+    );
+
+    assert.equal(await readFile(path, 'utf8'), beforeContent);
+    assert.equal((await store.findExact('prompt legado', context)), undefined);
+    const persisted = JSON.parse(await readFile(path, 'utf8')) as { entries: { reuseCount: number }[] };
+    assert.equal(persisted.entries[0]?.reuseCount, 3);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('valida embedding antes de deduplicar sem atualizar reuse', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-store-'));
+  try {
+    const path = join(directory, 'knowledge-v1.json');
+    const store = new FileLocalMemoryStore(path);
+    const entry = await store.save('Prompt duplicado', 'prompt duplicado', context, 'resposta', [1, 0]);
+    await assert.rejects(store.save('Prompt duplicado', 'prompt duplicado', context, 'nova resposta', []), /embedding/);
+    const persisted = JSON.parse(await readFile(path, 'utf8')) as { entries: { reuseCount: number }[] };
+    assert.equal(persisted.entries[0]?.reuseCount, 0);
+    assert.equal((await store.findExact('prompt duplicado', context))?.id, entry.id);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test('ignora temporário abandonado e nunca o interpreta como memória', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-store-'));
   try {

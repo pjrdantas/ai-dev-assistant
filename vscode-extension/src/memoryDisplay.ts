@@ -1,3 +1,5 @@
+import { containsSensitiveContent } from './sensitiveContent.js';
+
 const LEGACY_SAVE_MEMORY_PREFIX = /^\s*['"`]?ai-dev-assistant_saveMemory['"`]?\s+salve\s+como\s+conhecimento\s+reutiliz[aá]vel(?:\s+que)?\s*/iu;
 
 /**
@@ -5,6 +7,7 @@ const LEGACY_SAVE_MEMORY_PREFIX = /^\s*['"`]?ai-dev-assistant_saveMemory['"`]?\s
  * originalRequest persisted in MongoDB.
  */
 export function memoryDisplayTitle(originalRequest: string): string {
+  if (containsSensitiveContent(originalRequest)) return '[REDACTED SENSITIVE MEMORY]';
   const compact = originalRequest.replace(/\s+/g, ' ').trim();
   const cleaned = compact.replace(LEGACY_SAVE_MEMORY_PREFIX, '').trim();
 

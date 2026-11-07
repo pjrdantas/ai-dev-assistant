@@ -14,7 +14,7 @@ O GitHub Copilot, por meio do model picker nativo, é a única IA do produto.
 
 ### Nunca
 
-- Adicionar WebView de chat, Activity Bar própria ou seletor próprio de LLM.
+- Adicionar WebView de chat, chat paralelo próprio na Activity Bar ou seletor próprio de LLM.
 - Adicionar backend, Java, Spring, REST, MongoDB Atlas, Lucene, Docker ou outro daemon
   além do MongoDB local definido na ADR 0002 como requisito.
 - Fixar `model:` no arquivo `.agent.md`.
