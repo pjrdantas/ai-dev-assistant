@@ -12,6 +12,8 @@ export interface MongoConnectionStatus {
   readonly reason?: string;
 }
 
+export type MongoConnectionDiagnosticLogger = (line: string) => void;
+
 export class MongoMemoryUnavailableError extends Error {
   public constructor(cause: unknown) {
     super('MongoDB local indisponível. A memória local não foi consultada nem gravada.');
@@ -31,21 +33,28 @@ export class MongoConnectionManager {
   private client: MongoClient | undefined;
   private connecting: Promise<Db> | undefined;
   private indexes: Promise<void> | undefined;
-  private configurationUpdate: Promise<void> = Promise.resolve();
+  private lifecycle: Promise<void> = Promise.resolve();
 
   public constructor(
     private configuration: MongoConnectionConfiguration,
     private readonly clientFactory: (uri: string, options: MongoClientOptions) => MongoClient = (uri, options) => new MongoClient(uri, options),
+    private readonly diagnosticLogger: MongoConnectionDiagnosticLogger = () => undefined,
   ) {}
 
   public async database(): Promise<Db> {
+    await this.lifecycle;
     if (this.connecting === undefined) {
+      this.diagnosticLogger(`MongoDB connection attempt: uri=${redactUri(this.configuration.uri)}, database=${this.configuration.database}`);
       this.connecting = this.connect();
     }
+    const connecting = this.connecting;
     try {
-      return await this.connecting;
+      const database = await connecting;
+      this.diagnosticLogger(`MongoDB connection success: uri=${redactUri(this.configuration.uri)}, database=${this.configuration.database}`);
+      return database;
     } catch (error) {
-      this.connecting = undefined;
+      if (this.connecting === connecting) this.connecting = undefined;
+      this.diagnosticLogger(`MongoDB connection failure: uri=${redactUri(this.configuration.uri)}, database=${this.configuration.database}, ${describeError(error)}`);
       throw new MongoMemoryUnavailableError(error);
     }
   }
@@ -68,11 +77,49 @@ export class MongoConnectionManager {
       await this.ensureIndexes();
       return { connected: true, uri: redactUri(this.configuration.uri), database: this.configuration.database };
     } catch (error) {
+      this.diagnosticLogger(`MongoDB status failure: uri=${redactUri(this.configuration.uri)}, database=${this.configuration.database}, ${describeError(error)}`);
       return { connected: false, uri: redactUri(this.configuration.uri), database: this.configuration.database, reason: error instanceof Error ? error.message : 'erro desconhecido' };
     }
   }
 
   public async close(): Promise<void> {
+    await this.enqueueLifecycle(() => this.closeNow());
+  }
+
+  public async updateConfiguration(configuration: MongoConnectionConfiguration): Promise<void> {
+    await this.enqueueLifecycle(async () => {
+      await this.closeNow();
+      this.configuration = configuration;
+    });
+  }
+
+  public currentConfiguration(): MongoConnectionConfiguration { return this.configuration; }
+
+  private async connect(): Promise<Db> {
+    const client = this.client ??= this.clientFactory(this.configuration.uri, {
+      serverSelectionTimeoutMS: 1_500,
+      connectTimeoutMS: 1_500,
+      appName: 'AI Dev Assistant',
+    });
+    try {
+      await client.connect();
+      return client.db(this.configuration.database);
+    } catch (error) {
+      // A failed/closed client must never be reused by a later database() call.
+      if (this.client === client) this.client = undefined;
+      throw error;
+    }
+  }
+
+  private async closeNow(): Promise<void> {
+    const connecting = this.connecting;
+    if (connecting !== undefined) {
+      await connecting.catch(() => undefined);
+    }
+    const indexes = this.indexes;
+    if (indexes !== undefined) {
+      await indexes.catch(() => undefined);
+    }
     const client = this.client;
     this.client = undefined;
     this.connecting = undefined;
@@ -80,25 +127,10 @@ export class MongoConnectionManager {
     await client?.close();
   }
 
-  public async updateConfiguration(configuration: MongoConnectionConfiguration): Promise<void> {
-    const update = this.configurationUpdate.then(async () => {
-      await this.close();
-      this.configuration = configuration;
-    });
-    this.configurationUpdate = update.catch(() => undefined);
-    await update;
-  }
-
-  public currentConfiguration(): MongoConnectionConfiguration { return this.configuration; }
-
-  private async connect(): Promise<Db> {
-    this.client ??= this.clientFactory(this.configuration.uri, {
-      serverSelectionTimeoutMS: 1_500,
-      connectTimeoutMS: 1_500,
-      appName: 'AI Dev Assistant',
-    });
-    await this.client.connect();
-    return this.client.db(this.configuration.database);
+  private enqueueLifecycle(operation: () => Promise<void>): Promise<void> {
+    const current = this.lifecycle.then(operation);
+    this.lifecycle = current.catch(() => undefined);
+    return current;
   }
 
   private async createIndexes(): Promise<void> {
@@ -139,7 +171,40 @@ export class MongoConnectionManager {
 }
 
 export function redactUri(uri: string): string {
-  return uri.replace(/\/\/[^@/]*@/, '//***@');
+  return uri
+    .replace(/\/\/[^@/]*@/, '//***@')
+    .replace(/([?&](?:password|passwd|pwd|secret|token|api[-_]?key|access[-_]?token)=)[^&]*/gi, '$1***');
+}
+
+export function sanitizeDiagnosticText(text: string): string | undefined {
+  const sanitized = redactUri(text)
+    .replace(/((?:password|passwd|pwd|secret|token|api[-_]?key|access[-_]?token)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, '$1***')
+    .replace(/(Bearer\s+)[^\s,;]+/gi, '$1***')
+    .replace(/\r?\n/g, ' ')
+    .trim();
+  if (!sanitized || /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(sanitized)) return undefined;
+  return sanitized.length <= 500 ? sanitized : `${sanitized.slice(0, 500)}…`;
+}
+
+function describeError(error: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = error;
+  let depth = 0;
+  while (current !== undefined && current !== null && depth < 3) {
+    const record = typeof current === 'object' ? current as Record<string, unknown> : undefined;
+    const constructorName = record?.constructor;
+    const className = typeof constructorName === 'function' && typeof (constructorName as { readonly name?: unknown }).name === 'string'
+      ? (constructorName as { readonly name: string }).name
+      : typeof current;
+    const name = typeof record?.name === 'string' ? record.name : 'unknown';
+    const code = typeof record?.code === 'string' || typeof record?.code === 'number' ? String(record.code) : 'none';
+    const message = typeof record?.message === 'string' ? sanitizeDiagnosticText(record.message) : undefined;
+    parts.push(`class=${className}, name=${name}, code=${code}${message === undefined ? '' : `, message=${message}`}`);
+    current = record?.cause;
+    depth += 1;
+    if (current !== undefined && current !== null) parts.push('cause=');
+  }
+  return parts.join(' ');
 }
 
 function isMissingNamespace(error: unknown): boolean {

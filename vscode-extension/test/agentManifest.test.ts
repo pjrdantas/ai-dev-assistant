@@ -15,8 +15,8 @@ test('contribui o Custom Agent e as tools de memória sem restringir ferramentas
         readonly toolReferenceName?: string;
         readonly inputSchema?: { readonly required?: readonly string[] };
       }[];
-      readonly views?: unknown;
-      readonly viewsContainers?: unknown;
+      readonly views?: Record<string, readonly { readonly id: string; readonly name: string }[]>;
+      readonly viewsContainers?: { readonly activitybar?: readonly { readonly id: string; readonly title: string; readonly icon: string }[] };
       readonly configuration?: { readonly properties?: Record<string, { readonly default?: string }> };
     };
   };
@@ -30,12 +30,16 @@ test('contribui o Custom Agent e as tools de memória sem restringir ferramentas
   assert.deepEqual(tools?.map((tool) => tool.toolReferenceName), ['searchMemory', 'saveMemory']);
   assert.ok(tools?.every((tool) => tool.canBeReferencedInPrompt === true));
   assert.deepEqual(tools?.[1]?.inputSchema?.required, ['originalRequest', 'solution']);
-  assert.equal(manifest.contributes.views, undefined);
-  assert.equal(manifest.contributes.viewsContainers, undefined);
+  assert.deepEqual(manifest.contributes.viewsContainers?.activitybar, [
+    { id: 'aiDevAssistant', title: 'AI Dev Assistant', icon: './media/assistant.svg' },
+  ]);
+  assert.deepEqual(manifest.contributes.views?.aiDevAssistant, [
+    { id: 'aiDevAssistant.view', name: 'Controle' },
+  ]);
   assert.equal(manifest.contributes.configuration?.properties?.['aiDevAssistant.mongodb.uri']?.default, 'mongodb://127.0.0.1:27017');
   assert.equal(manifest.contributes.configuration?.properties?.['aiDevAssistant.mongodb.database']?.default, 'ai_dev_assistant');
 
-  const agent = await readFile(join(extensionRoot, agentPath!), 'utf8');
+  const agent = (await readFile(join(extensionRoot, agentPath!), 'utf8')).replace(/\r\n/g, '\n');
   assert.match(agent, /^---[\s\S]*name: AI Dev Assistant/m);
   assert.doesNotMatch(agent, /^model:/m);
   assert.doesNotMatch(agent, /^tools:/m);
@@ -72,7 +76,10 @@ test('contribui o Custom Agent e as tools de memória sem restringir ferramentas
   assert.match(embeddingProvider, /await import\('onnxruntime-web'\)/);
   assert.doesNotMatch(embeddingProvider, /import \* as ort from 'onnxruntime-web'/);
 
-  const extension = await readFile(join(extensionRoot, 'src', 'extension.ts'), 'utf8');
+  const extension = (await readFile(join(extensionRoot, 'src', 'extension.ts'), 'utf8')).replace(/\r\n/g, '\n');
+  assert.match(extension, /registerTreeDataProvider\('aiDevAssistant\.view'/);
+  const controlCenter = (await readFile(join(extensionRoot, 'src', 'controlCenter.ts'), 'utf8')).replace(/\r\n/g, '\n');
+  assert.match(controlCenter, /workbench\.action\.chat\.open/);
   assert.doesNotMatch(extension, /\.generate\(/);
   assert.match(extension, /const selectedWorkspaceKey = projectContext\.currentSearchWorkspaceKey\(\)/);
   assert.match(extension, /interactions\.statistics\(selectedWorkspaceKey, projectContext\.currentWorkspaceOrigins\(\)\)/);
@@ -91,7 +98,7 @@ test('contribui o Custom Agent e as tools de memória sem restringir ferramentas
 });
 
 test('instrui o agent loop a consultar e salvar memória automaticamente', async () => {
-  const agent = await readFile(join(extensionRoot, 'agents', 'ai-dev-assistant.agent.md'), 'utf8');
+  const agent = (await readFile(join(extensionRoot, 'agents', 'ai-dev-assistant.agent.md'), 'utf8')).replace(/\r\n/g, '\n');
   assert.match(agent, /MUST chamar `searchMemory`[\s\S]*antes de produzir uma nova solução técnica/);
   assert.match(agent, /MUST chamar `saveMemory` antes de[\s\S]*resposta final/);
   assert.match(agent, /copie literalmente a solicitação original real do usuário/);

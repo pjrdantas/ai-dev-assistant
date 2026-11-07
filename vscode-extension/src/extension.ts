@@ -5,7 +5,7 @@ import { OnnxLocalEmbeddingProvider } from './localEmbeddingProvider.js';
 import { LocalMemoryService } from './localMemoryService.js';
 import { registerMemoryTools } from './memoryTools.js';
 import { migrateJsonMemory } from './jsonMemoryMigration.js';
-import { MongoConnectionManager } from './mongoConnectionManager.js';
+import { MongoConnectionManager, redactUri } from './mongoConnectionManager.js';
 import { MongoInteractionStore } from './mongoInteractionStore.js';
 import { installAgentScopedHookRunner, installationAt, isAgentScopedHookRunnerInstalled, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from './interactionHookInstallation.js';
 import { InteractionPromotionService } from './interactionPromotionService.js';
@@ -15,19 +15,47 @@ import { estimateStoredMemoryTokens } from './tokenEstimation.js';
 import { VscodeProjectContextProvider } from './vscodeProjectContextProvider.js';
 import { DEFAULT_MONGO_DATABASE, DEFAULT_MONGO_URI, normalizeMongoHookConfiguration, readMongoHookConfiguration } from './mongoHookConfiguration.js';
 import { MongoHookConfigurationCoordinator } from './mongoHookConfigurationCoordinator.js';
+import { ControlCenterTreeModel } from './controlCenter.js';
+
+class ControlCenterTreeItem extends vscode.TreeItem {
+  public constructor(action: ReturnType<ControlCenterTreeModel['getChildren']>[number]) {
+    super(action.label, vscode.TreeItemCollapsibleState.None);
+    this.description = action.description;
+    this.tooltip = action.description;
+    this.iconPath = new vscode.ThemeIcon(action.icon);
+    this.command = { command: action.command, title: action.label };
+    this.contextValue = 'aiDevAssistant.controlCenterAction';
+  }
+}
+
+class ControlCenterTreeDataProvider implements vscode.TreeDataProvider<ControlCenterTreeItem> {
+  public readonly onDidChangeTreeData = new vscode.EventEmitter<ControlCenterTreeItem | undefined | null | void>().event;
+
+  public constructor(private readonly model: ControlCenterTreeModel) {}
+
+  public getTreeItem(element: ControlCenterTreeItem): vscode.TreeItem { return element; }
+
+  public getChildren(_element?: ControlCenterTreeItem): ControlCenterTreeItem[] {
+    return this.model.getChildren().map((action) => new ControlCenterTreeItem(action));
+  }
+}
 
 export function activate(context: vscode.ExtensionContext): void {
+  const output = vscode.window.createOutputChannel('AI Dev Assistant');
+  const extensionVersion = typeof context.extension.packageJSON?.version === 'string' ? context.extension.packageJSON.version : 'unknown';
+  output.appendLine(`AI Dev Assistant extension active: id=${context.extension.id}, version=${extensionVersion}`);
   const mongoConfiguration = () => normalizeMongoHookConfiguration({
     uri: vscode.workspace.getConfiguration('aiDevAssistant.mongodb').get<string>('uri', DEFAULT_MONGO_URI),
     database: vscode.workspace.getConfiguration('aiDevAssistant.mongodb').get<string>('database', DEFAULT_MONGO_DATABASE),
   });
-  const connection = new MongoConnectionManager(mongoConfiguration());
+  const effectiveMongoConfiguration = mongoConfiguration();
+  output.appendLine(`MongoDB effective configuration: uri=${redactUri(effectiveMongoConfiguration.uri)}, database=${effectiveMongoConfiguration.database}`);
+  const connection = new MongoConnectionManager(effectiveMongoConfiguration, undefined, (line) => output.appendLine(line));
   const memory = new MongoMemoryStore(connection);
   const interactions = new MongoInteractionStore(connection);
   const embeddings = new OnnxLocalEmbeddingProvider(
     vscode.Uri.joinPath(context.extensionUri, 'models', 'paraphrase-multilingual-minilm').fsPath,
   );
-  const output = vscode.window.createOutputChannel('AI Dev Assistant');
   const projectContext = new VscodeProjectContextProvider();
   const service = new LocalMemoryService(
     memory,
@@ -56,6 +84,7 @@ export function activate(context: vscode.ExtensionContext): void {
   registerMemoryTools(context, service, () => promotions.promotePending());
   context.subscriptions.push(
     output,
+    vscode.window.registerTreeDataProvider('aiDevAssistant.view', new ControlCenterTreeDataProvider(new ControlCenterTreeModel())),
     vscode.commands.registerCommand('aiDevAssistant.showMemoryStatistics', async () => {
       try {
         const stats = await memory.statistics();
