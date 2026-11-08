@@ -1,8 +1,8 @@
 # AUD-14 — Consolidação final do Lote 6
 
-Data da execução: 2026-11-07 (America/Sao_Paulo). Branch observada: `master`.
-Nenhum commit, push, publicação ou alteração de versão foi realizado até esta consolidação. A versão publicada
-de referência é `0.1.12`; `0.1.13` continua candidata não publicada.
+Data da execução: 2026-11-08 (America/Sao_Paulo). Branch observada: `master`.
+Os commits `95bd51f`, `b3138aa`, `6c016c6` e `ba2fb68` foram publicados normalmente em `master`.
+A versão publicada de referência é `0.1.12`; `0.1.13` continua candidata não publicada.
 
 ## Matriz final T01–T25
 
@@ -31,8 +31,8 @@ de referência é `0.1.12`; `0.1.13` continua candidata não publicada.
 | T21 | ONNX/assets | Checksum, lazy load, 384-D | `verify-local-onnx.mjs` | PASS | — |
 | T22 | Licenças | Inventário consistente | `verify-dependencies.mjs`: 190 pacotes | PASS | — |
 | T23 | SBOM | CycloneDX gerado | `npm sbom`: 242818 bytes | PASS | Artefato temporário |
-| T24 | Empacotamento isolado | VSIX candidata empacota sem publicar | `vsce package`: 451 arquivos, 78.24 MB | PASS | Instalação manual pendente |
-| T25 | Integridade do lote | Só `master`, diff sem whitespace error, sem perda de histórico | `git status`, `git diff --check` | PASS | Diff acumulado permanece não commitado |
+| T24 | Empacotamento isolado | VSIX candidata empacota sem publicar | `vsce package`: 440 arquivos, 78.23 MB | PASS | Instalação manual pendente |
+| T25 | Integridade do lote | Só `master`, diff sem whitespace error, sem perda de histórico | `git status`, `git diff --check`, `origin/master` | PASS | Artefatos locais não rastreados permanecem fora do commit |
 
 ## Validações e contagens
 
@@ -47,6 +47,7 @@ de referência é `0.1.12`; `0.1.13` continua candidata não publicada.
 - `npm audit --omit=dev --audit-level=high`: PASS, 0 vulnerabilidades.
 - SBOM CycloneDX: PASS, gerado em diretório temporário.
 - VSIX isolada: PASS, 440 arquivos e 78,23 MB; artefatos de auditoria excluídos; nenhuma release publicada.
+- GitHub Actions: PASS, run [42438625492](https://github.com/pjrdantas/ai-dev-assistant/actions/runs/42438625492), todos os passos verdes no commit `ba2fb68`.
 - `git diff --check`: PASS, com apenas avisos de normalização LF/CRLF já existentes.
 
 ## AUD-13 e AUD-14
@@ -64,8 +65,9 @@ limitações de homologação.
 
 ## Segurança, dependências e riscos residuais
 
-A revisão final de diff do Codex Security cobriu os 21 itens de código/configuração do
-working tree, com cobertura completa, zero candidatos reportáveis e zero achados.
+A revisão final do estado auditado cobriu os 21 itens de código/configuração; as duas
+correções posteriores, exclusivamente no workflow, também foram revisadas separadamente.
+Todas as revisões tiveram cobertura completa, zero candidatos reportáveis e zero achados.
 Artefatos locais com caminhos de auditoria, relatórios gerados e imagem não relacionada
 foram excluídos do staging. Não foram encontrados segredos nos arquivos selecionados para
 publicação. Os overrides principais
