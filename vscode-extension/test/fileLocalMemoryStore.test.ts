@@ -24,6 +24,20 @@ test('versiona revisões, invalida, exclui e limpa memória', async () => {
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test('não reutiliza nem reativa memória JSON invalidada durante replace ou registerReuse', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-store-'));
+  try {
+    const store = new FileLocalMemoryStore(join(directory, 'knowledge-v1.json'));
+    const entry = await store.save('Prompt invalidado', 'prompt invalidado', context, 'resposta antiga', [1, 0]);
+    assert.equal(await store.invalidate(entry.id), true);
+    assert.equal(await store.registerReuse(entry.id), undefined);
+    assert.equal(await store.replace(entry.id, 'resposta nova', [0, 1]), undefined);
+    assert.equal((await store.findExact('prompt invalidado', context)), undefined);
+    const persisted = JSON.parse(await readFile(join(directory, 'knowledge-v1.json'), 'utf8')) as { entries: { id: string; response: string }[] };
+    assert.equal(persisted.entries.find((item) => item.id === entry.id)?.response, 'resposta antiga');
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test('recupera JSON corrompido preservando backup', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-store-'));
   try {

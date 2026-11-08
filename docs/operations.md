@@ -8,7 +8,9 @@ disponível. Não instale Java, backend, Docker ou daemon do AI Dev Assistant. M
 
 ## Roteiro manual de cenário real
 
-1. Instale `ai-dev-assistant-0.1.0.vsix` com `code --install-extension`.
+1. Para a release publicada, instale `ai-dev-assistant-0.1.12.vsix` com
+   `code --install-extension`. A próxima candidata é `0.1.13` e ainda não foi
+   publicada; não a trate como release disponível.
 2. Abra Copilot Chat e confirme **AI Dev Assistant** no seletor de Agents.
 3. Selecione o agente, abra o model picker e alterne entre modelos Copilot disponíveis.
    O agente deve continuar selecionado; não existe seletor de modelo do plugin.
@@ -42,7 +44,7 @@ localidade das tools. `searchMemory` consulta somente armazenamento e embedding 
 `saveMemory` salva somente no perfil local após a confirmação prevista pela extensão.
 Nenhuma das duas chama internet ou outro LLM.
 
-## Captura automática de interações (Preview)
+## Captura automática de interações e consentimento
 
 `UserPromptSubmit` é declarado no frontmatter de
 `vscode-extension/agents/ai-dev-assistant.agent.md`. Portanto, quando o runtime oferece
@@ -51,12 +53,12 @@ o **AI Dev Assistant** está selecionado (ou é invocado como subagent). Não é
 transcript, título de conversa, conteúdo do prompt ou `cwd` para determinar o agente.
 
 Para habilitar, execute **AI Dev Assistant: Enable Automatic Interaction Capture** e
-confirme o aviso. A disponibilidade da configuração Preview
-`chat.useCustomAgentHooks` depende da versão/build do VS Code: o comando a detecta em
-runtime com `WorkspaceConfiguration.inspect` e só a ativa no perfil do usuário quando
-ela está registrada. Se não estiver disponível, a preparação dos launchers continua e o
-comando informa o suporte oferecido pelo runtime atual, sem erro e sem criar fallback
-global. Ele cria somente estes artefatos privados:
+confirme o aviso. A extensão instala somente launchers privados para os hooks
+agent-scoped; ela não força uma configuração Preview nem cria fallback global. A
+disponibilidade efetiva depende da versão/build do VS Code, admissão do workspace,
+políticas da organização e controles do runtime Copilot. Confirme o Session Target
+Copilot e Agent Customizations no perfil descartável. Ela cria somente estes artefatos
+privados:
 
 ```text
 ~/.copilot/ai-dev-assistant/run-interaction-hook.ps1   (Windows)
@@ -76,8 +78,10 @@ marcador contiver o valor criado pelo próprio AI Dev Assistant. Hooks e arquivo
 outros produtos não são modificados. Ao habilitar ou desabilitar, a extensão também pode
 remover o arquivo global legado `~/.copilot/hooks/ai-dev-assistant.json`, mas somente se
 o conteúdo comprovar que ele executa `interactionHookRunner.js` do AI Dev Assistant.
-A configuração Preview permanece uma escolha do
-usuário e pode ser desativada manualmente nas Settings do VS Code.
+O runtime Copilot compartilhado carrega hooks agent-scoped conforme a versão instalada,
+admissão do workspace, políticas da organização e controles de desabilitação do runtime.
+Não se deve presumir que uma configuração local antiga como `chat.useCustomAgentHooks`
+controle o Copilot atual.
 
 ### Teste manual de escopo
 
@@ -99,6 +103,9 @@ npm run compile
 npm run package:vsix
 npx vsce ls
 node ..\scripts\verify-local-onnx.mjs
+node ..\scripts\verify-dependencies.mjs
+npm audit --omit=dev --audit-level=high
+npm sbom --sbom-format cyclonedx > sbom.cdx.json
 ```
 
 Um usuário **não precisa abrir `pom.xml` manualmente**. O Custom Agent preserva as
@@ -137,3 +144,22 @@ O padrão de retenção aceita somente backups próprios com timestamp UTC e UUI
 minúsculas hexadecimais; arquivos de nome parecido não são candidatos à remoção. Arquivos
 temporários órfãos não são lidos como memória: somente o arquivo principal é interpretado
 na leitura.
+
+## Métricas de reutilização e tokens (AUD-13)
+
+Use `scripts/measure-copilot-memory-reuse.mjs` com observações A/B coletadas em um
+perfil isolado, alternando a ordem e mantendo modelo, tarefa e contexto iguais. O
+relatório registra latência, chamadas, `FULL`/`PARTIAL`/`NONE`, reutilizações efetivas e
+estimativas locais de tokens. A estimativa não é consumo do Copilot. Sem exportação
+oficial por execução, economia faturada permanece indisponível e não deve ser inferida.
+O método e o formato estão em [aud-13-token-economy.md](aud-13-token-economy.md).
+
+## Versões e atualização
+
+`0.1.12` é a versão publicada de referência neste lote. `0.1.13` é somente candidata
+de trabalho, ainda não publicada e sem mudança de versão neste lote. Para atualizar,
+instale o VSIX candidato em um perfil descartável, preserve a instalação cotidiana e
+confirme o agente, hooks, ferramentas e memória antes de substituir qualquer release.
+Para desinstalar, use `code --uninstall-extension ai-dev-assistant-local.ai-dev-assistant`
+e remova apenas dados locais após revisar o consentimento; a extensão não apaga o
+MongoDB automaticamente.

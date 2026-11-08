@@ -49,6 +49,8 @@ test('contribui o Custom Agent e as tools de memória sem restringir ferramentas
   assert.match(agent, /windows: 'powershell -NoProfile/);
   assert.match(agent, /linux: 'sh /);
   assert.match(agent, /osx: 'sh /);
+  assert.match(agent, /timeoutSec: 5/);
+  assert.doesNotMatch(agent, /timeout: 5/);
   assert.doesNotMatch(agent, /\.copilot\/hooks/);
   assert.match(agent, /#tool:searchMemory/);
   assert.match(agent, /#tool:saveMemory/);

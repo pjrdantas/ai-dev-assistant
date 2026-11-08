@@ -1,14 +1,15 @@
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { writeFile } from 'node:fs/promises';
-import { BSON, MongoClient } from 'mongodb';
+import { BSON } from 'mongodb';
 
-const OUT = process.env.BENCHMARK_OUTPUT ?? 'ETAPA_04D_1_BENCHMARK_RESULTS.json';
-const URI = process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017';
+const OUT = process.env.BENCHMARK_OUTPUT ?? 'AUD_10_SEMANTIC_SCALABILITY_RESULTS.json';
+const { createBenchmarkMongoClient, validateBenchmarkMongoUri } = await import(new URL('../out/src/benchmarkMongoConfiguration.js', import.meta.url));
+const URI = validateBenchmarkMongoUri(process.env.MONGODB_URI);
 const DIMENSION = 384;
 const WORKSPACE_A = 'workspace-a';
 const WORKSPACE_B = 'workspace-b';
-const SIZES = [1000, 10000, 50000];
+const SIZES = [100, 1000, 10000];
 const SAMPLES = 11;
 
 const { MongoConnectionManager } = await import(new URL('../out/src/mongoConnectionManager.js', import.meta.url));
@@ -125,7 +126,7 @@ async function measure(operation) {
 }
 
 async function main() {
-  const results = { generatedAt: new Date().toISOString(), uri: URI.replace(/\/\/[^@/]*@/, '//***@'), dimension: DIMENSION, samples: SAMPLES, percentiles: 'p50=ordem estatística 0.50; p95=ordem estatística 0.95 sobre amostras completas', sizes: [], embedding: {}, environment: { node: process.version, platform: process.platform } };
+  const results = { generatedAt: new Date().toISOString(), uri: URI.replace(/\/\/[^@/]*@/, '//***@'), dimension: DIMENSION, samples: SAMPLES, acceptanceCriteria: { sizes: [100, 1000, 10000], noArbitraryQueryLimit: true, deterministicTopK: true, documentsExaminedAndPeakMemoryRecorded: true, cpuNote: 'O ranqueamento local continua O(n); não declarar escalabilidade irrestrita.' }, percentiles: 'p50=ordem estatística 0.50; p95=ordem estatística 0.95 sobre amostras completas', sizes: [], embedding: {}, environment: { node: process.version, platform: process.platform } };
   const embeddingProvider = new OnnxLocalEmbeddingProvider(new URL('../models/paraphrase-multilingual-minilm/', import.meta.url).pathname.replace(/^\/(?:([A-Za-z]):)/, '$1:').replaceAll('/', '\\'));
   const coldStart = process.hrtime.bigint(); await embeddingProvider.generate('Localize o pom.xml e explique as dependências Maven reutilizáveis.');
   const coldMs = Number(process.hrtime.bigint() - coldStart) / 1e6;
@@ -134,19 +135,28 @@ async function main() {
 
   for (const size of SIZES) {
     const dbName = `ai_dev_assistant_benchmark_e3_004_${process.pid}_${size}_${Date.now()}`;
-    const client = new MongoClient(URI, { monitorCommands: true, appName: 'AI Dev Assistant benchmark E3-004' }); await client.connect();
-    const db = client.db(dbName); const collection = db.collection('memories');
-    await collection.createIndexes([{ key: { active: 1 }, name: 'memories_active' }, { key: { normalizedPrompt: 1, contextKey: 1, provenance: 1, scope: 1, workspaceKey: 1 }, name: 'memories_active_exact_unique', unique: true, partialFilterExpression: { active: true, provenance: { $exists: true }, scope: { $exists: true } } }]);
-    const insertStart = performance.now(); await insertSynthetic(collection, size); const insertMs = performance.now() - insertStart;
-    const connection = new MongoConnectionManager({ uri: URI, database: dbName }, () => client); const store = new MongoMemoryStore(connection);
-    const queryEmbedding = representativeVector(17); const context = { buildTool: 'Maven', frameworks: [{ name: 'Spring Boot', version: '3' }], languages: [{ name: 'JAVA', version: '21' }] };
-    const normalInstrumentation = instrument(client); const normal = await measure(() => store.findSimilar(queryEmbedding, context, { workspaceKey: WORKSPACE_A })); normalInstrumentation.stop();
-    const lookup = { workspaceKey: WORKSPACE_A, deduplication: { provenance: 'AUTO_PROMOTED', scope: 'WORKSPACE', workspaceKey: WORKSPACE_A } };
-    const beforeInstrumentation = instrument(client); const before = await measure(() => oldFindSimilar(collection, queryEmbedding, context, lookup)); beforeInstrumentation.stop();
-    const afterInstrumentation = instrument(client); const after = await measure(() => store.findSimilar(queryEmbedding, context, lookup)); afterInstrumentation.stop();
-    const beforeIds = before.value.map((match) => match.knowledge.id); const afterIds = after.value.map((match) => match.knowledge.id);
-    results.sizes.push({ size, insertMs, normal: { p50Ms: normal.p50Ms, p95Ms: normal.p95Ms, candidates: normal.value.length, documentsTransferred: normalInstrumentation.state.documents, bytesTransferred: normalInstrumentation.state.bytes, cpuMicrosUser: normal.cpuMicrosUser, cpuMicrosSystem: normal.cpuMicrosSystem, processHeapUsedMaxBytes: normal.processHeapUsedMaxBytes, explain: await explain(collection, { workspaceKey: WORKSPACE_A }, false) }, deduplicationBefore: { p50Ms: before.p50Ms, p95Ms: before.p95Ms, candidates: before.value.length, documentsTransferred: beforeInstrumentation.state.documents, bytesTransferred: beforeInstrumentation.state.bytes, cpuMicrosUser: before.cpuMicrosUser, cpuMicrosSystem: before.cpuMicrosSystem, processHeapUsedMaxBytes: before.processHeapUsedMaxBytes, explain: await explain(collection, lookup, false) }, deduplicationAfter: { p50Ms: after.p50Ms, p95Ms: after.p95Ms, candidates: after.value.length, documentsTransferred: afterInstrumentation.state.documents, bytesTransferred: afterInstrumentation.state.bytes, cpuMicrosUser: after.cpuMicrosUser, cpuMicrosSystem: after.cpuMicrosSystem, processHeapUsedMaxBytes: after.processHeapUsedMaxBytes, explain: await explain(collection, lookup, true) }, equivalence: { sameIds: JSON.stringify(beforeIds) === JSON.stringify(afterIds), beforeIds, afterIds, sameCount: before.value.length === after.value.length } });
-    await db.dropDatabase(); await client.close();
+    const client = createBenchmarkMongoClient(URI); await client.connect();
+    try {
+      const connection = new MongoConnectionManager({ uri: URI, database: dbName }, () => client);
+      await connection.ensureIndexes();
+      const db = client.db(dbName); const collection = db.collection('memories');
+      const insertStart = performance.now(); await insertSynthetic(collection, size); const insertMs = performance.now() - insertStart;
+      const store = new MongoMemoryStore(connection);
+      const queryEmbedding = representativeVector(17); const context = { buildTool: 'Maven', frameworks: [{ name: 'Spring Boot', version: '3' }], languages: [{ name: 'JAVA', version: '21' }] };
+      const normalInstrumentation = instrument(client); const normal = await measure(() => store.findSimilar(queryEmbedding, context, { workspaceKey: WORKSPACE_A })); normalInstrumentation.stop();
+      const lookup = { workspaceKey: WORKSPACE_A, deduplication: { provenance: 'AUTO_PROMOTED', scope: 'WORKSPACE', workspaceKey: WORKSPACE_A } };
+      const beforeInstrumentation = instrument(client); const before = await measure(() => oldFindSimilar(collection, queryEmbedding, context, lookup)); beforeInstrumentation.stop();
+      const afterInstrumentation = instrument(client); const after = await measure(() => store.findSimilar(queryEmbedding, context, lookup)); afterInstrumentation.stop();
+      const normalExplain = await explain(collection, { workspaceKey: WORKSPACE_A }, false);
+      const beforeExplain = await explain(collection, lookup, false);
+      const afterExplain = await explain(collection, lookup, true);
+      const beforeTopIds = before.value.slice(0, after.value.length).map((match) => match.knowledge.id); const afterIds = after.value.map((match) => match.knowledge.id);
+      results.sizes.push({ size, insertMs, normal: { p50Ms: normal.p50Ms, p95Ms: normal.p95Ms, candidatesReturned: normalExplain.nReturned, topK: normal.value.length, documentsTransferred: normalInstrumentation.state.documents, bytesTransferred: normalInstrumentation.state.bytes, cpuMicrosUser: normal.cpuMicrosUser, cpuMicrosSystem: normal.cpuMicrosSystem, processHeapUsedMaxBytes: normal.processHeapUsedMaxBytes, explain: normalExplain }, deduplicationBefore: { p50Ms: before.p50Ms, p95Ms: before.p95Ms, candidatesReturned: before.value.length, topK: before.value.slice(0, after.value.length).length, documentsTransferred: beforeInstrumentation.state.documents, bytesTransferred: beforeInstrumentation.state.bytes, cpuMicrosUser: before.cpuMicrosUser, cpuMicrosSystem: before.cpuMicrosSystem, processHeapUsedMaxBytes: before.processHeapUsedMaxBytes, explain: beforeExplain }, deduplicationAfter: { p50Ms: after.p50Ms, p95Ms: after.p95Ms, candidatesReturned: afterExplain.nReturned, topK: after.value.length, documentsTransferred: afterInstrumentation.state.documents, bytesTransferred: afterInstrumentation.state.bytes, cpuMicrosUser: after.cpuMicrosUser, cpuMicrosSystem: after.cpuMicrosSystem, processHeapUsedMaxBytes: after.processHeapUsedMaxBytes, explain: afterExplain }, equivalence: { sameTopKIds: JSON.stringify(beforeTopIds) === JSON.stringify(afterIds), beforeTopIds, afterIds, sameTopKCount: beforeTopIds.length === afterIds.length } });
+      await db.dropDatabase();
+      await connection.close();
+    } finally {
+      await client.close();
+    }
   }
   await writeFile(OUT, JSON.stringify(results, null, 2), 'utf8');
 }

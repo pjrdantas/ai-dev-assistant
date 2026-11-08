@@ -9,6 +9,7 @@ export type MemoryProvenance = 'AUTO_PROMOTED' | 'MANUAL' | 'LEGACY';
 export type MemoryScope = 'WORKSPACE' | 'SHARED' | 'LEGACY_UNSCOPED';
 
 export interface MemoryLookupScope {
+  /** Read-only selection options; lookup must never change reuse metrics. */
   readonly workspaceKey?: string;
   readonly includeLegacy?: boolean;
   readonly deduplication?: MemorySaveOptions;
@@ -40,6 +41,7 @@ export interface LocalKnowledge {
   readonly response: string;
   readonly createdAt: string;
   readonly lastUsedAt: string;
+  /** Count of validated search consumptions only; saves, deduplication and lookups do not increment it. */
   readonly reuseCount: number;
   readonly updatedAt?: string;
   readonly revision?: number;
@@ -48,6 +50,13 @@ export interface LocalKnowledge {
   readonly provenance?: MemoryProvenance;
   readonly scope?: MemoryScope;
   readonly workspaceKey?: string;
+  readonly history?: readonly MemoryHistoryEntry[];
+}
+
+export interface MemoryHistoryEntry {
+  readonly response: string;
+  readonly embedding?: readonly number[];
+  readonly updatedAt: string;
 }
 
 export interface LocalMemoryStore {
@@ -69,7 +78,7 @@ export interface LocalMemoryStore {
     embedding: readonly number[],
     options?: MemorySaveOptions,
   ): Promise<LocalKnowledge>;
-  replace?(id: string, response: string, embedding: readonly number[]): Promise<LocalKnowledge | undefined>;
+  replace?(id: string, response: string, embedding?: readonly number[]): Promise<LocalKnowledge | undefined>;
 }
 
 export interface LocalMemoryMatch {
@@ -120,7 +129,17 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
     if (entry === undefined || containsSensitiveMemory(entry)) {
       return undefined;
     }
-    return this.updateReuse(entry.id);
+    // Preserve the historical v1 record while upgrading its on-disk schema;
+    // this migration is deliberately independent from reuse accounting.
+    if (state.schemaVersion === 1) {
+      await this.serialize(async () => {
+        const latest = await this.read();
+        if (latest.schemaVersion === 1) await this.write(latest, latest.entries);
+      });
+    }
+    // Lookup is observational. Only LocalMemoryService.search registers a
+    // reuse after it has selected and validated a result.
+    return entry;
   }
 
   public async save(
@@ -147,7 +166,8 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
         candidate.normalizedPrompt === normalizedPrompt && candidate.contextKey === contextKey
         && sameDeduplicationScope(candidate, options));
       if (existing !== undefined) {
-        return this.writeUpdatedReuse(state, existing.id);
+        // Saving/deduplicating an existing record is not a reuse event.
+        return existing;
       }
       const timestamp = this.now().toISOString();
       const entry: LocalKnowledge = {
@@ -198,18 +218,28 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
   public async registerReuse(id: string): Promise<LocalKnowledge | undefined> {
     const state = await this.read();
     const entry = state.entries.find((candidate) => candidate.id === id);
-    return entry === undefined || containsSensitiveMemory(entry) ? undefined : this.updateReuse(id);
+    return entry === undefined || entry.invalidatedAt !== undefined || containsSensitiveMemory(entry) ? undefined : this.updateReuse(id);
   }
 
-  public async replace(id: string, response: string, embedding: readonly number[]): Promise<LocalKnowledge | undefined> {
+  public async replace(id: string, response: string, embedding?: readonly number[]): Promise<LocalKnowledge | undefined> {
     if (containsSensitiveContent(response)) throw new Error('Conteúdo potencialmente sensível não pode ser usado na memória local.');
     return this.serialize(async () => {
       const state = await this.read();
       let replacement: LocalKnowledge | undefined;
       const entries = state.entries.map((entry) => {
         if (entry.id !== id) return entry;
+        if (entry.invalidatedAt !== undefined) return entry;
         if (containsSensitiveMemory(entry)) throw new Error('Conteúdo potencialmente sensível não pode ser usado na memória local.');
-        replacement = { ...entry, response, embedding: validateEmbedding(embedding), updatedAt: this.now().toISOString(), revision: (entry.revision ?? 0) + 1, invalidatedAt: undefined };
+        const updatedAt = this.now().toISOString();
+        replacement = {
+          ...entry,
+          response,
+          ...(embedding === undefined ? {} : { embedding: validateEmbedding(embedding) }),
+          updatedAt,
+          revision: (entry.revision ?? 1) + 1,
+          history: [...(entry.history ?? []), { response: entry.response, embedding: entry.embedding, updatedAt: entry.updatedAt ?? entry.createdAt }],
+          invalidatedAt: undefined,
+        };
         return replacement;
       });
       if (replacement !== undefined) await this.write(state, entries);
@@ -240,7 +270,7 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
   private async updateReuse(id: string): Promise<LocalKnowledge | undefined> {
     return this.serialize(async () => {
       const state = await this.read();
-      if (!state.entries.some((entry) => entry.id === id)) {
+      if (!state.entries.some((entry) => entry.id === id && entry.invalidatedAt === undefined)) {
         return undefined;
       }
       return this.writeUpdatedReuse(state, id);
@@ -256,6 +286,7 @@ export class FileLocalMemoryStore implements LocalMemoryStore {
       updated = {
         ...entry,
         lastUsedAt: this.now().toISOString(),
+        updatedAt: this.now().toISOString(),
         reuseCount: entry.reuseCount + 1,
       };
       return updated;
@@ -400,7 +431,10 @@ export function memoryScope(entry: Pick<LocalKnowledge, 'scope'>): MemoryScope {
 export function isMemoryAccessible(entry: Pick<LocalKnowledge, 'provenance' | 'scope' | 'workspaceKey'>, lookup: MemoryLookupScope): boolean {
   const provenance = memoryProvenance(entry);
   const scope = memoryScope(entry);
-  if (provenance === 'LEGACY') return lookup.includeLegacy !== false;
+  // Legacy records have no trustworthy workspace origin. They may remain
+  // available for an explicitly unscoped lookup, but must never cross a
+  // workspace boundary as if they were shared knowledge.
+  if (provenance === 'LEGACY') return lookup.includeLegacy !== false && lookup.workspaceKey === undefined;
   if (scope === 'SHARED') return true;
   return scope === 'WORKSPACE' && lookup.workspaceKey !== undefined && entry.workspaceKey === lookup.workspaceKey;
 }
@@ -445,7 +479,7 @@ function parseMemory(content: string): PersistedMemory {
     throw new Error('O arquivo de memória local possui schema incompatível.');
   }
   const entries = candidate.entries.map((entry) => parseEntry(entry, candidate.schemaVersion as number));
-  return { schemaVersion: SCHEMA_VERSION, revision: candidate.revision as number, entries };
+  return { schemaVersion: candidate.schemaVersion as number, revision: candidate.revision as number, entries };
 }
 
 function parseEntry(value: unknown, schemaVersion: number): LocalKnowledge {

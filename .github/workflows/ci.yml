@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:8.0
+        ports:
+          - 27018:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: vscode-extension
+    env:
+      AI_DEV_ASSISTANT_E3_006_MONGODB_URI: mongodb://127.0.0.1:27018/ci_e3_006?directConnection=true
+      AI_DEV_ASSISTANT_E3_007_MONGODB_URI: mongodb://127.0.0.1:27018/ci_e3_007?directConnection=true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: vscode-extension/package-lock.json
+      - name: Install deterministic dependencies
+        run: npm ci
+      - name: Compile TypeScript
+        run: npm run compile
+      - name: Run automated tests
+        run: npm test
+      - name: Verify ONNX assets, lazy load, and 384-D embedding
+        run: node ../scripts/verify-local-onnx.mjs
+      - name: Verify dependency licenses
+        run: node ../scripts/verify-dependencies.mjs
+      - name: Audit dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Record full dependency audit
+        if: always()
+        run: npm audit --json > npm-audit-full.json || true
+      - name: Generate SBOM
+        run: npm sbom --sbom-format cyclonedx > sbom.cdx.json
+      - name: Package VSIX
+        run: npx vsce package --dependencies --out audit-temporary.vsix
+      - name: Inspect VSIX contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f audit-temporary.vsix
+          tar -tf audit-temporary.vsix | tee vsix-contents.txt
+          grep -q '^extension/package.json$' vsix-contents.txt
+          grep -q '^extension/agents/ai-dev-assistant.agent.md$' vsix-contents.txt
+          grep -q '^extension/out/src/interactionHookRunner.js$' vsix-contents.txt
+          grep -q '^extension/models/paraphrase-multilingual-minilm/model.onnx$' vsix-contents.txt
+          test ! -e node_modules/.bin/does-not-exist
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-dev-assistant-ci-evidence
+          if-no-files-found: warn
+          path: |
+            vscode-extension/audit-temporary.vsix
+            vscode-extension/sbom.cdx.json
+            vscode-extension/dependency-licenses.json
+            vscode-extension/npm-audit-full.json
+            vscode-extension/vsix-contents.txt

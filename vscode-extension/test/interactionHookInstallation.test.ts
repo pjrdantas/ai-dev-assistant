@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 
-import { installAgentScopedHookRunner, installationAt, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from '../src/interactionHookInstallation.js';
+import { agentScopedHookRunnerState, installAgentScopedHookRunner, installationAt, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from '../src/interactionHookInstallation.js';
 
 test('instala launchers próprios sem criar hook global do usuário', async () => {
   const home = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-hook-'));
@@ -50,6 +50,22 @@ test('desinstala somente os artefatos marcados do AI Dev Assistant', async () =>
     assert.equal(await readFile(foreign, 'utf8'), 'preservar');
     await assert.rejects(readFile(installation.mongoConfiguration, 'utf8'), { code: 'ENOENT' });
     assert.equal(await uninstallAgentScopedHookRunner(home), false);
+  } finally { await rm(home, { recursive: true, force: true }); }
+});
+
+test('detecta launcher obsoleto e não confunde launcher marcado desconhecido com instalação reparável', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-hook-'));
+  try {
+    const installation = await installAgentScopedHookRunner(home, 'node', 'runner-v1.js');
+    assert.equal(await agentScopedHookRunnerState(home, 'node', 'runner-v1.js'), 'current');
+    assert.equal(await agentScopedHookRunnerState(home, 'node', 'runner-v2.js'), 'stale');
+    await writeFile(installation.shellLauncher, '#!/usr/bin/env sh\n# conteúdo alterado\n', 'utf8');
+    assert.equal(await agentScopedHookRunnerState(home, 'node', 'runner-v2.js'), 'unknown');
+    await assert.rejects(
+      installAgentScopedHookRunner(home, 'node', 'runner-v2.js'),
+      /launcher não reconhecido/,
+    );
+    assert.equal(await readFile(installation.shellLauncher, 'utf8'), '#!/usr/bin/env sh\n# conteúdo alterado\n');
   } finally { await rm(home, { recursive: true, force: true }); }
 });
 

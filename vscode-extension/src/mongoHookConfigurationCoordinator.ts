@@ -9,6 +9,8 @@ export interface MongoHookConfigurationCoordinatorDependencies {
   readonly updateConnection: (configuration: MongoConnectionConfiguration) => Promise<void>;
   readonly syncInstalledHook: (configuration: MongoConnectionConfiguration) => Promise<void>;
   readonly disableInstalledHook: () => Promise<boolean>;
+  /** Returns whether a managed installation points at the current extension runner. */
+  readonly installedHookState?: () => Promise<'current' | 'stale' | 'unknown' | 'not-installed'>;
   readonly reportIssue?: (message: string) => void;
 }
 
@@ -85,6 +87,17 @@ export class MongoHookConfigurationCoordinator {
     }
     if (!sameConfiguration(previousHook, configuration)) {
       this.report(`A configuração dos hooks aponta para um database MongoDB diferente do atual. Nenhum launcher foi sincronizado automaticamente; um hook preexistente pode continuar apontando para o database anterior. Use o comando explícito de habilitação para reparar após confirmação.`);
+    } else if (this.dependencies.installedHookState !== undefined) {
+      try {
+        const state = await this.dependencies.installedHookState();
+        if (state === 'stale') {
+          await this.dependencies.syncInstalledHook(configuration);
+        } else if (state === 'unknown') {
+          this.report('O launcher marcado não pôde ser reconhecido como artefato gerenciado. Nenhum arquivo foi sobrescrito; revise os hooks e autorize uma reinstalação explícita.');
+        }
+      } catch (error) {
+        this.report(`Não foi possível verificar se o launcher é obsoleto. Nenhum arquivo foi sobrescrito: ${errorMessage(error)}`);
+      }
     }
     await this.dependencies.updateConnection(configuration);
   }

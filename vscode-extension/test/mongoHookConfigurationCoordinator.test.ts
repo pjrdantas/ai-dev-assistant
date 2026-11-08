@@ -49,6 +49,23 @@ test('5B.5: configuração igual não reescreve launchers durante reconciliaçã
   assert.equal(calls.disable, 0);
 });
 
+test('AUD-11: reconcilia launcher obsoleto somente quando a instalação é reconhecida como gerenciada', async () => {
+  const { coordinator, calls } = createCoordinator({
+    installedHookState: async () => 'stale',
+  });
+  await coordinator.reconcile();
+  assert.equal(calls.sync, 1);
+});
+
+test('AUD-11: launcher marcado desconhecido não é sobrescrito durante reinício', async () => {
+  const { coordinator, calls } = createCoordinator({
+    installedHookState: async () => 'unknown',
+  });
+  await coordinator.reconcile();
+  assert.equal(calls.sync, 0);
+  assert.match(calls.issues[0] ?? '', /foi sobrescrito/);
+});
+
 test('5B.5: configuração divergente não sincroniza silenciosamente e informa o risco', async () => {
   const { coordinator, calls } = createCoordinator({ readInstalledConfiguration: async () => configuration('synthetic_previous') });
   await coordinator.reconcile();

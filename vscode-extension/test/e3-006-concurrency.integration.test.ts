@@ -116,6 +116,9 @@ test('E3-006: substituicoes concorrentes preservam uma memória ativa e uma revi
     assert.equal(stored?.active, true);
     assert.ok(stored?.knowledge.response === 'solução A' || stored?.knowledge.response === 'solução B');
     assert.equal(stored?.knowledge.revision, 2);
+    assert.equal(stored?.knowledge.history?.length, 1);
+    assert.equal(stored?.knowledge.history?.[0]?.response, 'original');
+    assert.equal((await store.findExact('substituição concorrente', context))?.response, stored?.knowledge.response);
   });
 });
 
@@ -139,7 +142,16 @@ test('E3-006: replace ignora memória invalidada sem alterar seus campos', async
 test('E3-006: replace propaga erro MongoDB inesperado', async () => {
   const unexpected = new Error('falha MongoDB sintética');
   const store = new MongoMemoryStore({
-    async database() { return { collection() { return { findOneAndUpdate: async () => { throw unexpected; } }; } } as never; },
+    async database() {
+      return {
+        collection() {
+          return {
+            findOne: async () => ({ _id: 'memory-id', active: true, revision: 1, response: 'anterior', createdAt: new Date(), updatedAt: new Date(), embedding: [1, 0] }),
+            findOneAndUpdate: async () => { throw unexpected; },
+          };
+        },
+      } as never;
+    },
     async ensureIndexes() {},
   } as never);
   await assert.rejects(store.replace('memory-id', 'resposta', [1, 0]), (error) => error === unexpected);

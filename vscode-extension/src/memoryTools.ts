@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 
 import { LocalMemoryService } from './localMemoryService.js';
 import { MANUAL_SAVE_CONFIRMATION_MESSAGE } from './memoryConfirmation.js';
+import { runBeforeSearch, SearchPromotionDiagnostic } from './searchPreparation.js';
 import { stripToolReference } from './toolReferenceUtils.js';
 
 export { stripToolReference } from './toolReferenceUtils.js';
@@ -19,19 +20,26 @@ export interface SaveMemoryInput {
   readonly solution: string;
 }
 
+export type { SearchPromotionDiagnostic } from './searchPreparation.js';
+
 export function registerMemoryTools(
   context: vscode.ExtensionContext,
   memory: LocalMemoryService,
   beforeSearch?: () => Promise<void>,
+  onBeforeSearchFailure?: (diagnostic: SearchPromotionDiagnostic) => void,
 ): void {
   context.subscriptions.push(
-    vscode.lm.registerTool(SEARCH_MEMORY_TOOL, new SearchMemoryTool(memory, beforeSearch)),
+    vscode.lm.registerTool(SEARCH_MEMORY_TOOL, new SearchMemoryTool(memory, beforeSearch, onBeforeSearchFailure)),
     vscode.lm.registerTool(SAVE_MEMORY_TOOL, new SaveMemoryTool(memory)),
   );
 }
 
 export class SearchMemoryTool implements vscode.LanguageModelTool<SearchMemoryInput> {
-  public constructor(private readonly memory: LocalMemoryService, private readonly beforeSearch?: () => Promise<void>) {}
+  public constructor(
+    private readonly memory: LocalMemoryService,
+    private readonly beforeSearch?: () => Promise<void>,
+    private readonly onBeforeSearchFailure?: (diagnostic: SearchPromotionDiagnostic) => void,
+  ) {}
 
   public prepareInvocation(): vscode.PreparedToolInvocation {
     return { invocationMessage: 'Consultando a memória local do AI Dev Assistant' };
@@ -40,7 +48,7 @@ export class SearchMemoryTool implements vscode.LanguageModelTool<SearchMemoryIn
   public async invoke(
     options: vscode.LanguageModelToolInvocationOptions<SearchMemoryInput>,
   ): Promise<vscode.LanguageModelToolResult> {
-    await this.beforeSearch?.();
+    await runBeforeSearch(this.beforeSearch, this.onBeforeSearchFailure);
     const result = await this.memory.search(stripToolReference(options.input.request, SEARCH_MEMORY_TOOL));
     return jsonResult(result);
   }

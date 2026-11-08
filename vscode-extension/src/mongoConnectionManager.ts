@@ -158,12 +158,15 @@ export class MongoConnectionManager {
         { key: { normalizedPrompt: 1 }, name: 'memories_normalizedPrompt' },
         { key: { updatedAt: -1 }, name: 'memories_updatedAt' },
         { key: { contextKey: 1, active: 1 }, name: 'memories_contextKey_active' },
+        { key: { active: 1, scope: 1, workspaceKey: 1, provenance: 1, contextKey: 1 }, name: 'memories_semantic_scope' },
         { key: { normalizedPrompt: 1, contextKey: 1, provenance: 1, scope: 1, workspaceKey: 1 }, name: 'memories_active_exact_unique', unique: true, partialFilterExpression: { active: true, provenance: { $exists: true }, scope: { $exists: true } } },
       ]),
       db.collection('interactions').createIndexes([
         { key: { sessionId: 1, createdAt: -1 }, name: 'interactions_sessionId_createdAt' },
         { key: { workspaceKey: 1, createdAt: -1 }, name: 'interactions_workspaceKey_createdAt' },
         { key: { status: 1 }, name: 'interactions_status' },
+        { key: { status: 1, promotionStatus: 1, promotionLeaseUntil: 1, completedAt: 1 }, name: 'interactions_promotion_lease' },
+        { key: { interactionId: 1, promotionStatus: 1, promotionOwner: 1 }, name: 'interactions_promotion_owner' },
         { key: { interactionId: 1 }, name: 'interactions_interactionId_unique', unique: true },
       ]),
     ]);

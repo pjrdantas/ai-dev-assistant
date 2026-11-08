@@ -7,7 +7,7 @@ import { registerMemoryTools } from './memoryTools.js';
 import { migrateJsonMemory } from './jsonMemoryMigration.js';
 import { MongoConnectionManager, redactUri } from './mongoConnectionManager.js';
 import { MongoInteractionStore } from './mongoInteractionStore.js';
-import { installAgentScopedHookRunner, installationAt, isAgentScopedHookRunnerInstalled, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from './interactionHookInstallation.js';
+import { agentScopedHookRunnerState, installAgentScopedHookRunner, installationAt, isAgentScopedHookRunnerInstalled, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from './interactionHookInstallation.js';
 import { InteractionPromotionService } from './interactionPromotionService.js';
 import { MongoMemoryStore } from './mongoMemoryStore.js';
 import { memoryDisplayTitle } from './memoryDisplay.js';
@@ -73,6 +73,11 @@ export function activate(context: vscode.ExtensionContext): void {
     getActiveConfiguration: () => connection.currentConfiguration(),
     isInstalled: () => isAgentScopedHookRunnerInstalled(homedir()),
     readInstalledConfiguration: () => readMongoHookConfiguration(installationAt(homedir()).mongoConfiguration),
+    installedHookState: () => agentScopedHookRunnerState(
+      homedir(),
+      process.execPath,
+      vscode.Uri.joinPath(context.extensionUri, 'out', 'src', 'interactionHookRunner.js').fsPath,
+    ),
     updateConnection: (configuration) => connection.updateConfiguration(configuration),
     syncInstalledHook: async (configuration) => {
       const runner = vscode.Uri.joinPath(context.extensionUri, 'out', 'src', 'interactionHookRunner.js').fsPath;
@@ -81,7 +86,9 @@ export function activate(context: vscode.ExtensionContext): void {
     disableInstalledHook: () => uninstallAgentScopedHookRunner(homedir()),
     reportIssue: (issue) => { void vscode.window.showWarningMessage(`Captura automática não reconciliada: ${issue}`); },
   });
-  registerMemoryTools(context, service, () => promotions.promotePending());
+  registerMemoryTools(context, service, () => promotions.promotePending(), (diagnostic) => {
+    output.appendLine(`Memory promotion before search failed: reason=${diagnostic.reason}${diagnostic.message === undefined ? '' : ` message=${diagnostic.message}`}`);
+  });
   context.subscriptions.push(
     output,
     vscode.window.registerTreeDataProvider('aiDevAssistant.view', new ControlCenterTreeDataProvider(new ControlCenterTreeModel())),

@@ -66,8 +66,10 @@ export class LocalMemoryService {
     if (exact !== undefined) {
       if (!this.isCurrentWorkspace(workspaceKey)) return none();
       if (containsSensitiveContent(exact.originalRequest) || containsSensitiveContent(exact.response)) return none();
-      this.diagnose(prompt, [], 'FULL', 'EXACT', exact.id);
-      return full(exact, 1);
+      const reused = await this.requireReuse(exact.id);
+      if (!this.isCurrentWorkspace(workspaceKey)) return none();
+      this.diagnose(prompt, [], 'FULL', 'EXACT', reused.id);
+      return full(reused, 1);
     }
 
     const embedding = await this.embeddings.generate(prompt);
@@ -126,6 +128,23 @@ export class LocalMemoryService {
     if (existing !== undefined) {
       rejectSensitiveContent(existing.originalRequest);
       rejectSensitiveContent(existing.response);
+      if (existing.response !== reusableSolution && this.memory.replace !== undefined) {
+        this.assertWorkspace(expectedWorkspaceKey);
+        let updated: LocalKnowledge | undefined;
+        try {
+          // An exact hit already has the identity and, when available, the embedding
+          // for this prompt. Reuse that embedding so exact-first remains lazy.
+          updated = await this.memory.replace(existing.id, reusableSolution, existing.embedding);
+        } catch (error) {
+          if (error instanceof MongoMemoryUnavailableError) return { memoryId: '', reusedExistingKnowledge: false, memoryUnavailable: true };
+          throw error;
+        }
+        if (updated !== undefined) {
+          rejectSensitiveContent(updated.originalRequest);
+          rejectSensitiveContent(updated.response);
+          return { memoryId: updated.id, reusedExistingKnowledge: true };
+        }
+      }
       return { memoryId: existing.id, reusedExistingKnowledge: true };
     }
     const embedding = await this.embeddings.generate(prompt);

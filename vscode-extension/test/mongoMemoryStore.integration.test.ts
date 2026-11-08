@@ -16,11 +16,25 @@ import { stripToolReference } from '../src/toolReferenceUtils.js';
 
 const SEARCH_MEMORY_TOOL = 'ai-dev-assistant_searchMemory';
 const SAVE_MEMORY_TOOL = 'ai-dev-assistant_saveMemory';
+const testMongoUri = requiredEphemeralMongoUri();
+
+function requiredEphemeralMongoUri(): string {
+  const uri = process.env.AI_DEV_ASSISTANT_E3_006_MONGODB_URI?.trim();
+  if (uri === undefined || uri.length === 0) {
+    throw new Error('MongoDB integration tests require AI_DEV_ASSISTANT_E3_006_MONGODB_URI on an ephemeral port different from 27017.');
+  }
+  const authority = uri.slice('mongodb://'.length).split(/[/?#]/)[0] ?? '';
+  const hosts = authority.slice(authority.lastIndexOf('@') + 1).split(',');
+  if (!uri.startsWith('mongodb://') || hosts.some((host) => !/:[0-9]+$/.test(host)) || hosts.some((host) => host.endsWith(':27017'))) {
+    throw new Error('MongoDB integration tests require an explicit mongodb:// URI on a port different from 27017.');
+  }
+  return uri;
+}
 
 const context: ProjectContext = { buildTool: 'MAVEN', frameworks: [{ name: 'SPRING_BOOT', version: '3.5.14' }], languages: [{ name: 'JAVA', version: '21' }] };
 
 test('MongoDB real: estatísticas isolam o workspace selecionado e rejeitam origem ambígua', async (t) => {
-  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_e3_003_${randomUUID().replaceAll('-', '')}` });
+  const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_e3_003_${randomUUID().replaceAll('-', '')}` });
   const originA = workspaceKey('C:/workspace-a')!;
   const originB = workspaceKey('C:/workspace-b')!;
   const originC = workspaceKey('C:/workspace-c')!;
@@ -68,7 +82,7 @@ test('MongoDB real: estatísticas isolam o workspace selecionado e rejeitam orig
 });
 
 test('MongoDB real: save -> exact e candidato semântico Maven/pom.xml', async (t) => {
-  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   try {
     let database;
     try { database = await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
@@ -97,7 +111,7 @@ test('MongoDB real: save -> exact e candidato semântico Maven/pom.xml', async (
 });
 
 test('MongoDB real: promoção seleciona somente a origem do workspace atual', async (t) => {
-  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   const originA = workspaceKey('C:/workspace-a')!;
   const originB = workspaceKey('C:/workspace-b')!;
   try {
@@ -124,7 +138,7 @@ test('MongoDB real: promoção seleciona somente a origem do workspace atual', a
 });
 
 test('MongoDB real: promoção resolve cwd de subdiretório para a raiz aberta mais específica', async (t) => {
-  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   const root = workspaceKey('C:/workspace-a')!;
   const child = workspaceKey('C:/workspace-a/apps/service')!;
   try {
@@ -147,7 +161,7 @@ test('MongoDB real: promoção resolve cwd de subdiretório para a raiz aberta m
 });
 
 test('MongoDB real: promoções iguais de workspaces distintos coexistem e a busca exata respeita a origem', async (t) => {
-  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   const originA = workspaceKey('C:/workspace-a')!;
   const originB = workspaceKey('C:/workspace-b')!;
   try {
@@ -170,7 +184,7 @@ test('MongoDB real: promoções iguais de workspaces distintos coexistem e a bus
 });
 
 test('MongoDB real: promoção não substitui legado sem proveniência e índice novo o mantém coexistente', async (t) => {
-  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   const originA = workspaceKey('C:/workspace-a')!;
   try {
     let database;
@@ -187,6 +201,7 @@ test('MongoDB real: promoção não substitui legado sem proveniência e índice
 
     assert.equal((await memories.countDocuments({ active: true })), 2);
     assert.equal((await memories.findOne({ _id: legacyId }))?.response, 'Resposta legada');
+    assert.equal((await store.findExact('mesma pergunta técnica', context, { workspaceKey: originA }))?.response, 'Resposta nova automática');
     assert.equal((await store.findExact('mesma pergunta técnica', context, { workspaceKey: originA, includeLegacy: false }))?.response, 'Resposta nova automática');
   } finally {
     try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
@@ -195,7 +210,7 @@ test('MongoDB real: promoção não substitui legado sem proveniência e índice
 });
 
 test('MongoDB real: memória compartilhada não deduplica promoção automática do workspace', async (t) => {
-  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   const origin = workspaceKey('C:/workspace-a')!;
   try {
     try { await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
@@ -216,7 +231,7 @@ test('MongoDB real: memória compartilhada não deduplica promoção automática
 });
 
 test('MongoDB real: promoção automática não impede gravação manual compartilhada', async (t) => {
-  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   const origin = workspaceKey('C:/workspace-a')!;
   try {
     try { await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
@@ -237,7 +252,7 @@ test('MongoDB real: promoção automática não impede gravação manual compart
 });
 
 test('MongoDB real: busca prefere workspace atual antes da memória compartilhada', async (t) => {
-  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   const origin = workspaceKey('C:/workspace-a')!;
   try {
     try { await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
@@ -255,7 +270,7 @@ test('MongoDB real: busca prefere workspace atual antes da memória compartilhad
 });
 
 test('MongoDB real: busca semântica prefere workspace atual mesmo com compartilhada mais similar', async (t) => {
-  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   const origin = workspaceKey('C:/workspace-a')!;
   try {
     try { await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
@@ -273,7 +288,7 @@ test('MongoDB real: busca semântica prefere workspace atual mesmo com compartil
 
 test('MongoDB real: deduplicação aplica identidade no Mongo e preserva a semântica de acesso', async (t) => {
   const databaseName = `ai_dev_assistant_e3_004_dedup_${randomUUID().replaceAll('-', '')}`;
-  const monitoredClient = new MongoClient('mongodb://127.0.0.1:27017', { monitorCommands: true });
+  const monitoredClient = new MongoClient(testMongoUri, { monitorCommands: true });
   const returnedDocuments: number[] = [];
   monitoredClient.on('commandSucceeded', (event) => {
     if (event.commandName !== 'find' && event.commandName !== 'getMore') return;
@@ -281,7 +296,7 @@ test('MongoDB real: deduplicação aplica identidade no Mongo e preserva a semâ
     const batch = reply.cursor?.firstBatch ?? reply.cursor?.nextBatch ?? [];
     returnedDocuments.push(batch.length);
   });
-  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: databaseName }, () => monitoredClient);
+  const connection = new MongoConnectionManager({ uri: testMongoUri, database: databaseName }, () => monitoredClient);
   const originA = workspaceKey('C:/workspace-a')!;
   const originB = workspaceKey('C:/workspace-b')!;
   const timestamp = new Date('2026-01-01T00:00:00.000Z');
@@ -320,9 +335,11 @@ test('MongoDB real: deduplicação aplica identidade no Mongo e preserva a semâ
     assert.equal(returnedDocuments.reduce((sum, count) => sum + count, 0), 1);
 
     const normal = await store.findSimilar([1, 0], context, { workspaceKey: originA });
-    assert.deepEqual(new Set(normal.map((match) => match.knowledge.id)), new Set(['auto-a', 'manual-shared-null', 'legacy']));
+    assert.deepEqual(new Set(normal.map((match) => match.knowledge.id)), new Set(['auto-a', 'manual-shared-null']));
     const withoutLegacy = await store.findSimilar([1, 0], context, { workspaceKey: originA, includeLegacy: false });
     assert.equal(withoutLegacy.some((match) => match.knowledge.id === 'legacy'), false);
+    const unscoped = await store.findSimilar([1, 0], context);
+    assert.equal(unscoped.some((match) => match.knowledge.id === 'legacy'), true);
 
     const service = new LocalMemoryService(store, { async generate() { return [1, 0]; } }, { async capture() { return context; }, currentWorkspaceKeys() { return [originA]; } } as ProjectContextProvider & { currentWorkspaceKeys: () => readonly string[] });
     const semantic = await service.save('nova formulação semântica', 'A atualizada', originA);
@@ -343,7 +360,7 @@ test('MongoDB real: deduplicação aplica identidade no Mongo e preserva a semâ
 });
 
 test('MongoDB real: índice legado bloqueia inicialização sem alterar dados', async (t) => {
-  const connection = new MongoConnectionManager({ uri: 'mongodb://127.0.0.1:27017', database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
+  const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   try {
     let database;
     try { database = await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
@@ -367,7 +384,7 @@ test('MongoDB real: índice legado bloqueia inicialização sem alterar dados', 
 
 test('MongoDB real: gerencia ativacao e desativacao de memorias sem apagar dados', async (t) => {
   const connection = new MongoConnectionManager({
-    uri: 'mongodb://127.0.0.1:27017',
+    uri: testMongoUri,
     database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}`,
   });
 
@@ -541,7 +558,7 @@ test('MongoDB real: gerencia ativacao e desativacao de memorias sem apagar dados
 
 test('MongoDB real: reativacao em lote ignora memoria duplicada que ja possui equivalente ativa', async (t) => {
   const connection = new MongoConnectionManager({
-    uri: 'mongodb://127.0.0.1:27017',
+    uri: testMongoUri,
     database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}`,
   });
 
@@ -609,7 +626,7 @@ test('MongoDB real: reativacao em lote ignora memoria duplicada que ja possui eq
 
 test('MongoDB real: reativacao individual ignora memoria duplicada que ja possui equivalente ativa', async (t) => {
   const connection = new MongoConnectionManager({
-    uri: 'mongodb://127.0.0.1:27017',
+    uri: testMongoUri,
     database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}`,
   });
 
@@ -671,7 +688,7 @@ test('MongoDB real: reativacao individual ignora memoria duplicada que ja possui
 
 test('MongoDB real: reativacao de todas as memorias ignora duplicada que ja possui equivalente ativa', async (t) => {
   const connection = new MongoConnectionManager({
-    uri: 'mongodb://127.0.0.1:27017',
+    uri: testMongoUri,
     database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}`,
   });
 

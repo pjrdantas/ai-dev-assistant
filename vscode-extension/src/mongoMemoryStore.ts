@@ -1,7 +1,7 @@
 import { Collection, Document } from 'mongodb';
 
 import { ProjectContext } from './contracts.js';
-import { LocalKnowledge, LocalMemoryMatch, LocalMemoryStore, MemoryLookupScope, MemorySaveOptions, isDeduplicationMatch, memoryProvenance, memoryScope, projectContextKey } from './localMemoryStore.js';
+import { LocalKnowledge, LocalMemoryMatch, LocalMemoryStore, MemoryHistoryEntry, MemoryLookupScope, MemorySaveOptions, isDeduplicationMatch, memoryProvenance, memoryScope, projectContextKey } from './localMemoryStore.js';
 import { MongoConnectionManager } from './mongoConnectionManager.js';
 import { containsSensitiveContent } from './sensitiveContent.js';
 
@@ -25,6 +25,13 @@ interface MemoryDocument extends Document {
   readonly provenance?: 'AUTO_PROMOTED' | 'MANUAL' | 'LEGACY';
   readonly scope?: 'WORKSPACE' | 'SHARED' | 'LEGACY_UNSCOPED';
   readonly workspaceKey?: string;
+  readonly history?: MongoMemoryHistoryEntry[];
+}
+
+interface MongoMemoryHistoryEntry {
+  readonly response: string;
+  readonly embedding?: readonly number[];
+  readonly updatedAt: Date;
 }
 
 export interface MongoMemoryStatistics {
@@ -45,13 +52,10 @@ export class MongoMemoryStore implements LocalMemoryStore {
 
   public async findExact(normalizedPrompt: string, context: ProjectContext | undefined, lookup: MemoryLookupScope = {}): Promise<LocalKnowledge | undefined> {
     const collection = await this.memories();
-    const timestamp = this.now();
     const contextKey = projectContextKey(context);
     for (const query of exactQueries(normalizedPrompt, contextKey, lookup)) {
-      const document = await collection.findOneAndUpdate(
+      const document = await collection.findOne(
         { ...query, active: true },
-        { $inc: { reuseCount: 1 }, $set: { lastUsedAt: timestamp, updatedAt: timestamp } },
-        { returnDocument: 'after' },
       );
       if (document !== null) {
         const knowledge = mapDocument(document);
@@ -64,18 +68,20 @@ export class MongoMemoryStore implements LocalMemoryStore {
   public async findSimilar(embedding: readonly number[], context: ProjectContext | undefined, lookup: MemoryLookupScope = {}): Promise<readonly LocalMemoryMatch[]> {
     validateEmbedding(embedding);
     const contextKey = projectContextKey(context);
-    const documents = await (await this.memories()).find(similarQuery(lookup)).toArray();
-    return documents
-      .filter((document) => isDeduplicationMatch(mapDocument(document), lookup))
-      .filter((document) => document.embedding !== undefined && document.embedding.length === embedding.length)
-      .map((document) => ({
-        knowledge: mapDocument(document),
-        similarity: cosineSimilarity(embedding, document.embedding!),
-        contextCompatible: document.contextKey === contextKey,
-      }))
-      .sort((left, right) => memoryPriority(right.knowledge, lookup) - memoryPriority(left.knowledge, lookup)
-        || right.similarity - left.similarity
-        || left.knowledge.id.localeCompare(right.knowledge.id));
+    const matches: LocalMemoryMatch[] = [];
+    const cursor = (await this.memories())
+      .find(similarQuery(lookup))
+      .project({ _id: 1, originalRequest: 1, normalizedPrompt: 1, contextKey: 1, response: 1, embedding: 1, createdAt: 1, updatedAt: 1, lastUsedAt: 1, reuseCount: 1, revision: 1, invalidatedAt: 1, provenance: 1, scope: 1, workspaceKey: 1 })
+      .batchSize(256);
+    for await (const document of cursor as AsyncIterable<MemoryDocument>) {
+      if (document.embedding === undefined || document.embedding.length !== embedding.length) continue;
+      const knowledge = mapDocument(document);
+      if (!isDeduplicationMatch(knowledge, lookup) || containsSensitiveMemory(knowledge)) continue;
+      matches.push({ knowledge, similarity: cosineSimilarity(embedding, document.embedding), contextCompatible: document.contextKey === contextKey });
+      matches.sort(compareMatches(lookup));
+      if (matches.length > MAX_SEMANTIC_RESULTS) matches.pop();
+    }
+    return matches;
   }
 
   public async registerReuse(id: string): Promise<LocalKnowledge | undefined> {
@@ -113,21 +119,27 @@ export class MongoMemoryStore implements LocalMemoryStore {
       if (!isDuplicateKey(error)) throw error;
       const raced = await collection.findOne({ normalizedPrompt, contextKey, active: true, provenance: options.provenance, scope: options.scope, ...(options.workspaceKey === undefined ? {} : { workspaceKey: options.workspaceKey }) });
       if (raced === null) throw error;
-      return (await this.registerReuse(raced._id))!;
+      return mapDocument(raced);
     }
     const stored = result.value;
     if (stored === null) throw new Error('A memória MongoDB não foi persistida.');
-    if (result.lastErrorObject?.updatedExisting === true) return (await this.registerReuse(stored._id))!;
+    if (result.lastErrorObject?.updatedExisting === true) return mapDocument(stored);
     return mapDocument(stored);
   }
 
-  public async replace(id: string, response: string, embedding: readonly number[]): Promise<LocalKnowledge | undefined> {
+  public async replace(id: string, response: string, embedding?: readonly number[]): Promise<LocalKnowledge | undefined> {
     if (containsSensitiveContent(response)) throw new Error('Conteúdo potencialmente sensível não pode ser usado na memória local.');
-    validateEmbedding(embedding);
     const timestamp = this.now();
+    const current = await (await this.memories()).findOne({ _id: id, active: true });
+    if (current === null) return undefined;
+    if (embedding !== undefined) validateEmbedding(embedding);
+    const nextRevision = (current.revision ?? 1) + 1;
     const document = await (await this.memories()).findOneAndUpdate(
-      { _id: id, active: true },
-      { $set: { response, embedding: [...embedding], updatedAt: timestamp }, $inc: { revision: 1 } },
+      { _id: id, active: true, revision: current.revision },
+      {
+        $set: { response, ...(embedding === undefined ? {} : { embedding: [...embedding] }), updatedAt: timestamp, revision: nextRevision },
+        $push: { history: { response: current.response, ...(current.embedding === undefined ? {} : { embedding: [...current.embedding] }), updatedAt: (current.updatedAt ?? current.createdAt) } } as Document,
+      },
       { returnDocument: 'after' },
     );
     return document === null ? undefined : mapDocument(document);
@@ -304,16 +316,16 @@ function containsSensitiveMemory(entry: Pick<LocalKnowledge, 'originalRequest' |
 }
 
 function mapDocument(document: MemoryDocument): LocalKnowledge {
-  return { id: document._id, originalRequest: document.originalRequest, normalizedPrompt: document.normalizedPrompt, contextKey: document.contextKey, response: document.response, createdAt: document.createdAt.toISOString(), updatedAt: document.updatedAt?.toISOString(), lastUsedAt: document.lastUsedAt.toISOString(), reuseCount: document.reuseCount, revision: document.revision, invalidatedAt: document.invalidatedAt?.toISOString(), embedding: document.embedding, provenance: document.provenance ?? 'LEGACY', scope: document.scope ?? 'LEGACY_UNSCOPED', workspaceKey: document.workspaceKey ?? undefined };
+  return { id: document._id, originalRequest: document.originalRequest, normalizedPrompt: document.normalizedPrompt, contextKey: document.contextKey, response: document.response, createdAt: document.createdAt.toISOString(), updatedAt: document.updatedAt?.toISOString(), lastUsedAt: document.lastUsedAt.toISOString(), reuseCount: document.reuseCount, revision: document.revision, invalidatedAt: document.invalidatedAt?.toISOString(), embedding: document.embedding, history: document.history?.map((entry) => ({ response: entry.response, embedding: entry.embedding, updatedAt: entry.updatedAt.toISOString() })), provenance: document.provenance ?? 'LEGACY', scope: document.scope ?? 'LEGACY_UNSCOPED', workspaceKey: document.workspaceKey ?? undefined };
 }
 
 function toMigrationDocument(entry: LocalKnowledge): MemoryDocument {
-  return { _id: entry.id, schemaVersion: SCHEMA_VERSION, originalRequest: entry.originalRequest, normalizedPrompt: entry.normalizedPrompt, contextKey: entry.contextKey, response: entry.response, embedding: entry.embedding, active: entry.invalidatedAt === undefined, createdAt: new Date(entry.createdAt), updatedAt: new Date(entry.updatedAt ?? entry.createdAt), lastUsedAt: new Date(entry.lastUsedAt), reuseCount: entry.reuseCount, revision: entry.revision, invalidatedAt: entry.invalidatedAt === undefined ? undefined : new Date(entry.invalidatedAt), provenance: memoryProvenance(entry), scope: memoryScope(entry), workspaceKey: entry.workspaceKey };
+  return { _id: entry.id, schemaVersion: SCHEMA_VERSION, originalRequest: entry.originalRequest, normalizedPrompt: entry.normalizedPrompt, contextKey: entry.contextKey, response: entry.response, embedding: entry.embedding, history: entry.history?.map((item) => ({ response: item.response, embedding: item.embedding, updatedAt: new Date(item.updatedAt) })), active: entry.invalidatedAt === undefined, createdAt: new Date(entry.createdAt), updatedAt: new Date(entry.updatedAt ?? entry.createdAt), lastUsedAt: new Date(entry.lastUsedAt), reuseCount: entry.reuseCount, revision: entry.revision, invalidatedAt: entry.invalidatedAt === undefined ? undefined : new Date(entry.invalidatedAt), provenance: memoryProvenance(entry), scope: memoryScope(entry), workspaceKey: entry.workspaceKey };
 }
 
 function accessibleQuery(lookup: MemoryLookupScope): Record<string, unknown> {
   return { $or: [
-    ...(lookup.includeLegacy === false ? [] : [{ provenance: { $exists: false } }, { provenance: 'LEGACY' }]),
+    ...(lookup.includeLegacy === false || lookup.workspaceKey !== undefined ? [] : [{ provenance: { $exists: false } }, { provenance: 'LEGACY' }]),
     { scope: 'SHARED' },
     ...(lookup.workspaceKey === undefined ? [] : [{ scope: 'WORKSPACE', workspaceKey: lookup.workspaceKey }]),
   ] };
@@ -342,7 +354,7 @@ function exactQueries(normalizedPrompt: string, contextKey: string, lookup: Memo
   const queries: Record<string, unknown>[] = [];
   if (lookup.workspaceKey !== undefined) queries.push({ normalizedPrompt, contextKey, scope: 'WORKSPACE', workspaceKey: lookup.workspaceKey });
   queries.push({ normalizedPrompt, contextKey, scope: 'SHARED' });
-  if (lookup.includeLegacy !== false) {
+  if (lookup.includeLegacy !== false && lookup.workspaceKey === undefined) {
     queries.push({ normalizedPrompt, contextKey, provenance: { $exists: false } });
     queries.push({ normalizedPrompt, contextKey, provenance: 'LEGACY' });
   }
@@ -365,6 +377,14 @@ function deduplicationIdentityQuery(options: MemorySaveOptions): Record<string, 
 
 function memoryPriority(entry: Pick<LocalKnowledge, 'scope' | 'workspaceKey'>, lookup: MemoryLookupScope): number {
   return lookup.workspaceKey !== undefined && memoryScope(entry) === 'WORKSPACE' && entry.workspaceKey === lookup.workspaceKey ? 2 : memoryScope(entry) === 'SHARED' ? 1 : 0;
+}
+
+const MAX_SEMANTIC_RESULTS = 100;
+
+function compareMatches(lookup: MemoryLookupScope): (left: LocalMemoryMatch, right: LocalMemoryMatch) => number {
+  return (left, right) => memoryPriority(right.knowledge, lookup) - memoryPriority(left.knowledge, lookup)
+    || right.similarity - left.similarity
+    || left.knowledge.id.localeCompare(right.knowledge.id);
 }
 
 function validateEmbedding(embedding: readonly number[]): void { if (embedding.length === 0 || embedding.some((value) => !Number.isFinite(value))) throw new Error('O embedding da memória local é inválido.'); }

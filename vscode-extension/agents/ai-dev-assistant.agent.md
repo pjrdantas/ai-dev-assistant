@@ -9,14 +9,14 @@ hooks:
       windows: 'powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.copilot\\ai-dev-assistant\\run-interaction-hook.ps1"'
       linux: 'sh "$HOME/.copilot/ai-dev-assistant/run-interaction-hook.sh"'
       osx: 'sh "$HOME/.copilot/ai-dev-assistant/run-interaction-hook.sh"'
-      timeout: 5
+      timeoutSec: 5
   Stop:
     - type: command
       command: 'sh "$HOME/.copilot/ai-dev-assistant/run-interaction-hook.sh"'
       windows: 'powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.copilot\\ai-dev-assistant\\run-interaction-hook.ps1"'
       linux: 'sh "$HOME/.copilot/ai-dev-assistant/run-interaction-hook.sh"'
       osx: 'sh "$HOME/.copilot/ai-dev-assistant/run-interaction-hook.sh"'
-      timeout: 5
+      timeoutSec: 5
 ---
 
 # AI Dev Assistant

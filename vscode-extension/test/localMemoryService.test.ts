@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -10,7 +10,7 @@ import { LocalMemoryService, SEMANTIC_DEDUPLICATION_THRESHOLD } from '../src/loc
 import { FileLocalMemoryStore, LocalKnowledge, LocalMemoryMatch, LocalMemoryStore } from '../src/localMemoryStore.js';
 import { MongoMemoryUnavailableError } from '../src/mongoConnectionManager.js';
 
-test('persiste, deduplica e registra reuso de conhecimento exato', async () => {
+test('persiste, revisa e registra reuso de conhecimento exato', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-memory-'));
   try {
     const store = new FileLocalMemoryStore(join(directory, 'knowledge-v1.json'));
@@ -23,10 +23,30 @@ test('persiste, deduplica e registra reuso de conhecimento exato', async () => {
     assert.equal(second.reusedExistingKnowledge, true);
     assert.equal(result.matchType, 'FULL');
     assert.equal(result.memoryId, first.memoryId);
-    assert.equal(result.reusableSolution, 'Resposta reutilizável');
+    assert.equal(result.reusableSolution, 'Resposta diferente ignorada pela deduplicação');
+    const persisted = JSON.parse(await readFile(join(directory, 'knowledge-v1.json'), 'utf8')) as { entries: { revision?: number; history?: { response: string }[] }[] };
+    assert.equal(persisted.entries[0]?.revision, 2);
+    assert.deepEqual(persisted.entries[0]?.history?.map((entry) => entry.response), ['Resposta reutilizável']);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('AUD-09: lookup e deduplicação não contam reuso; somente search validado conta', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-aud09-'));
+  try {
+    const store = new FileLocalMemoryStore(join(directory, 'knowledge.json'));
+    const service = new LocalMemoryService(store, embeddings(), contextProvider(javaContext('21')));
+    const saved = await service.save('pergunta métrica', 'solução');
+    assert.equal((await store.findExact('pergunta métrica', javaContext('21')))?.reuseCount, 0);
+    assert.equal((await service.save('pergunta métrica', 'solução revisada')).reusedExistingKnowledge, true);
+    assert.equal((await store.findExact('pergunta métrica', javaContext('21')))?.reuseCount, 0);
+    await service.search('pergunta métrica');
+    assert.equal((await store.findExact('pergunta métrica', javaContext('21')))?.reuseCount, 1);
+    await service.save('pergunta métrica', 'solução final');
+    assert.equal((await store.findExact('pergunta métrica', javaContext('21')))?.reuseCount, 1);
+    assert.equal(saved.reusedExistingKnowledge, false);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test('um exact match não inicializa o provider de embedding', async () => {

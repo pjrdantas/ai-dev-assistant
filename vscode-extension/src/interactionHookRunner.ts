@@ -4,6 +4,7 @@ import { readUtf8WithinLimit } from './boundedInput.js';
 import { interactionFromUserPrompt, UserPromptSubmitInput } from './interactionCapture.js';
 import { TranscriptResponseExtractor } from './transcriptResponseExtractor.js';
 import { loadMongoHookConfiguration, MongoHookConfigurationError } from './mongoHookConfiguration.js';
+import { containsSensitiveContent } from './sensitiveContent.js';
 
 export const MAX_STDIN_BYTES = 1 * 1024 * 1024;
 
@@ -27,9 +28,12 @@ async function main(): Promise<void> {
       if (input.session_id === undefined) return;
       const extracted = await new TranscriptResponseExtractor().extractFinalAssistantResponse(input.transcript_path);
       const completedAt = input.timestamp === undefined ? new Date() : new Date(input.timestamp);
-      const update = extracted.kind === 'FOUND'
-        ? { $set: { status: 'COMPLETED', response: extracted.response, completedAt, promotionStatus: 'PENDING', metadata: { captureSource: 'STOP_TRANSCRIPT' } } }
-        : { $set: { status: 'RESPONSE_UNAVAILABLE', completedAt, promotionStatus: 'SKIPPED', promotionReason: extracted.reason, metadata: { captureSource: 'STOP_TRANSCRIPT' } } };
+      const safeResponse = extracted.kind === 'FOUND' && !containsSensitiveContent(extracted.response)
+        ? extracted.response
+        : undefined;
+      const update = safeResponse !== undefined
+        ? { $set: { status: 'COMPLETED', response: safeResponse, completedAt, promotionStatus: 'PENDING', metadata: { captureSource: 'STOP_TRANSCRIPT' } } }
+        : { $set: { status: 'RESPONSE_UNAVAILABLE', completedAt, promotionStatus: 'SKIPPED', promotionReason: extracted.kind === 'FOUND' ? 'SENSITIVE_RESPONSE' : extracted.reason, metadata: { captureSource: 'STOP_TRANSCRIPT' } } };
       await interactions.findOneAndUpdate({ sessionId: input.session_id, status: 'PENDING' }, update, { sort: { createdAt: -1 }, returnDocument: 'after' });
     } finally { await client.close(); }
   } catch (error) {

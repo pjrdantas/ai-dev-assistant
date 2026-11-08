@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { normalizeWorkspacePath, resolveWorkspaceOrigin, workspaceKey } from '../src/interactionCapture.js';
+import { isMemoryAccessible } from '../src/localMemoryStore.js';
 import { InteractionPromotionService } from '../src/interactionPromotionService.js';
 import { LocalMemoryService } from '../src/localMemoryService.js';
 import type { LocalKnowledge } from '../src/localMemoryStore.js';
@@ -91,6 +92,26 @@ test('projetos com a mesma stack não compartilham promoção automática', asyn
 
   assert.deepEqual(saved, ['same-stack-b']);
   assert.equal(interactions.record('same-stack-a').promotionStatus, 'PENDING');
+});
+
+test('gate de qualidade não promove respostas incompletas, rejeitadas ou indisponíveis', async () => {
+  const origin = workspaceKey('C:/workspace-a')!;
+  const interactions = new FakeInteractions([
+    { ...completed('incomplete', origin), response: 'curta' },
+    { ...completed('rejected', origin), response: 'Não posso ajudar com isso.' },
+    { ...completed('valid', origin), response: 'Resposta técnica válida para reutilização.' },
+    { ...completed('unavailable', origin), response: undefined },
+  ]);
+  const saved: string[] = [];
+  const memory = createMemoryProvider(() => [origin], contextA, saved);
+
+  await new InteractionPromotionService(interactions as never, memory, () => [origin]).promotePending(4);
+
+  assert.deepEqual(saved, ['valid']);
+  assert.equal(interactions.record('incomplete').promotionReason, 'RESPONSE_INCOMPLETE');
+  assert.equal(interactions.record('rejected').promotionReason, 'RESPONSE_REJECTED');
+  assert.equal(interactions.record('valid').promotionStatus, 'PROMOTED');
+  assert.equal(interactions.record('unavailable').promotionReason, 'NOT_TECHNICAL_OR_EMPTY');
 });
 
 test('identidade de caminho Windows ignora maiúsculas, barras e separador final', () => {
@@ -261,6 +282,12 @@ test('multi-root permite as raízes explicitamente abertas e nada além delas', 
 
   assert.deepEqual(saved, ['root-a', 'root-b']);
   assert.equal(interactions.record('outside').promotionStatus, 'PENDING');
+});
+
+test('dados LEGACY sem origem não atravessam a fronteira de workspace', () => {
+  const originA = workspaceKey('C:/workspace-a')!;
+  assert.equal(isMemoryAccessible({ provenance: 'LEGACY', scope: 'LEGACY_UNSCOPED' }, { workspaceKey: originA }), false);
+  assert.equal(isMemoryAccessible({ provenance: 'LEGACY', scope: 'LEGACY_UNSCOPED' }, {}), true);
 });
 
 function completed(id: string, origin: string | undefined): MutableInteraction {

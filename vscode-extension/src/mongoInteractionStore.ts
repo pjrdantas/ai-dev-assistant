@@ -1,4 +1,5 @@
 import { Collection, Document } from 'mongodb';
+import { randomUUID } from 'node:crypto';
 
 import { MongoConnectionManager } from './mongoConnectionManager.js';
 import { WorkspaceOrigin, resolveWorkspaceOrigin } from './interactionCapture.js';
@@ -6,6 +7,8 @@ import { containsSensitiveContent } from './sensitiveContent.js';
 
 export type InteractionStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'RESPONSE_UNAVAILABLE' | 'SKIPPED_SENSITIVE';
 export type PromotionStatus = 'PENDING' | 'PROCESSING' | 'PROMOTED' | 'SKIPPED' | 'FAILED';
+export const PROMOTION_LEASE_MS = 30_000;
+export const MAX_PROMOTION_ATTEMPTS = 5;
 
 export interface InteractionRecord {
   readonly interactionId: string;
@@ -19,6 +22,12 @@ export interface InteractionRecord {
   readonly cwd?: string;
   readonly promotionStatus?: PromotionStatus;
   readonly promotionReason?: string;
+  /** Fencing token for the worker that currently owns PROCESSING. */
+  readonly promotionOwner?: string;
+  /** A PROCESSING claim is recoverable when this deadline is in the past. */
+  readonly promotionLeaseUntil?: Date;
+  /** Monotonic claim count, bounded by MAX_PROMOTION_ATTEMPTS. */
+  readonly promotionAttempts?: number;
   readonly metadata?: Readonly<Record<string, string>>;
 }
 
@@ -57,36 +66,40 @@ export class MongoInteractionStore {
     return found !== null;
   }
 
-  public async claimCompletedForPromotion(limit: number): Promise<readonly InteractionRecord[]> {
-    return this.claimCompletedForPromotionInWorkspaces(limit, []);
+  public async claimCompletedForPromotion(limit: number, owner = randomUUID()): Promise<readonly InteractionRecord[]> {
+    return this.claimCompletedForPromotionInWorkspaces(limit, [], owner);
   }
 
-  public async claimCompletedForPromotionInWorkspaces(limit: number, workspaceKeys: readonly string[]): Promise<readonly InteractionRecord[]> {
+  public async claimCompletedForPromotionInWorkspaces(limit: number, workspaceKeys: readonly string[], owner = randomUUID(), leaseMs = PROMOTION_LEASE_MS, now = new Date()): Promise<readonly InteractionRecord[]> {
     if (limit <= 0 || workspaceKeys.length === 0) return [];
     const claimed: InteractionRecord[] = [];
     const collection = await this.interactions();
     for (let index = 0; index < limit; index += 1) {
-      const record = await collection.findOneAndUpdate({ status: 'COMPLETED', promotionStatus: 'PENDING', workspaceKey: { $in: [...workspaceKeys] } }, { $set: { promotionStatus: 'PROCESSING' as const } }, { sort: { completedAt: 1, createdAt: 1 }, returnDocument: 'after' });
+      const record = await collection.findOneAndUpdate(
+        { status: 'COMPLETED', workspaceKey: { $in: [...workspaceKeys] }, ...claimablePromotionQuery(now) },
+        claimUpdate(owner, leaseMs, now),
+        { sort: { completedAt: 1, createdAt: 1, interactionId: 1 }, returnDocument: 'after' },
+      );
       if (record === null) break;
       claimed.push(record);
     }
     return claimed;
   }
 
-  public async claimCompletedForPromotionInWorkspaceOrigins(limit: number, origins: readonly WorkspaceOrigin[]): Promise<readonly InteractionRecord[]> {
+  public async claimCompletedForPromotionInWorkspaceOrigins(limit: number, origins: readonly WorkspaceOrigin[], owner = randomUUID(), leaseMs = PROMOTION_LEASE_MS, now = new Date()): Promise<readonly InteractionRecord[]> {
     if (limit <= 0 || origins.length === 0) return [];
     const claimed: InteractionRecord[] = [];
     const collection = await this.interactions();
-    const candidates = await collection.find({ status: 'COMPLETED', promotionStatus: 'PENDING' }).sort({ completedAt: 1, createdAt: 1 }).toArray();
-    for (const candidate of candidates) {
+    const cursor = collection.find({ status: 'COMPLETED', ...claimablePromotionQuery(now) }).sort({ completedAt: 1, createdAt: 1, interactionId: 1 }).project({ interactionId: 1, status: 1, workspaceKey: 1, cwd: 1, originalRequest: 1, response: 1, createdAt: 1, completedAt: 1, promotionStatus: 1, promotionReason: 1, promotionOwner: 1, promotionLeaseUntil: 1, promotionAttempts: 1 });
+    for await (const candidate of cursor) {
       if (claimed.length >= limit) break;
       const resolvedOrigin = resolveWorkspaceOrigin(candidate.cwd, origins);
       if (candidate.cwd !== undefined
         ? resolvedOrigin === undefined
         : !origins.some((origin) => origin.workspaceKey === candidate.workspaceKey)) continue;
       const record = await collection.findOneAndUpdate(
-        { interactionId: candidate.interactionId, status: 'COMPLETED', promotionStatus: 'PENDING' },
-        { $set: { promotionStatus: 'PROCESSING' as const } },
+        { interactionId: candidate.interactionId, status: 'COMPLETED', ...claimablePromotionQuery(now) },
+        claimUpdate(owner, leaseMs, now),
         { returnDocument: 'after' },
       );
       if (record !== null) claimed.push(record);
@@ -94,18 +107,34 @@ export class MongoInteractionStore {
     return claimed;
   }
 
-  public async releasePromotion(id: string, reason: string): Promise<void> {
-    await (await this.interactions()).updateOne({ interactionId: id, promotionStatus: 'PROCESSING' }, { $set: { promotionStatus: 'PENDING', promotionReason: reason } });
+  public async releasePromotion(id: string, reason: string, owner: string, maxAttempts = MAX_PROMOTION_ATTEMPTS): Promise<boolean> {
+    const collection = await this.interactions();
+    const released = await collection.updateOne({ interactionId: id, promotionStatus: 'PROCESSING', promotionOwner: owner, promotionAttempts: { $lt: maxAttempts } }, { $set: { promotionStatus: 'PENDING', promotionReason: reason }, $unset: { promotionOwner: '', promotionLeaseUntil: '' } });
+    if (released.modifiedCount === 1) return true;
+    const failed = await collection.updateOne({ interactionId: id, promotionStatus: 'PROCESSING', promotionOwner: owner, promotionAttempts: { $gte: maxAttempts } }, { $set: { promotionStatus: 'FAILED', promotionReason: 'RETRY_EXCEEDED' }, $unset: { promotionOwner: '', promotionLeaseUntil: '' } });
+    return failed.modifiedCount === 1;
   }
 
-  public async finishPromotion(id: string, status: Exclude<PromotionStatus, 'PENDING' | 'PROCESSING'>, reason: string): Promise<void> {
-    await (await this.interactions()).updateOne({ interactionId: id, promotionStatus: 'PROCESSING' }, { $set: { promotionStatus: status, promotionReason: reason } });
+  public async finishPromotion(id: string, status: Exclude<PromotionStatus, 'PENDING' | 'PROCESSING'>, reason: string, owner: string): Promise<boolean> {
+    const result = await (await this.interactions()).updateOne({ interactionId: id, promotionStatus: 'PROCESSING', promotionOwner: owner }, { $set: { promotionStatus: status, promotionReason: reason }, $unset: { promotionOwner: '', promotionLeaseUntil: '' } });
+    return result.modifiedCount === 1;
   }
 
   private async interactions(): Promise<Collection<InteractionRecord & Document>> {
     await this.connection.ensureIndexes();
     return (await this.connection.database()).collection<InteractionRecord & Document>('interactions');
   }
+}
+
+function claimablePromotionQuery(now: Date): Record<string, unknown> {
+  return { $or: [
+    { promotionStatus: 'PENDING' },
+    { promotionStatus: 'PROCESSING', promotionLeaseUntil: { $lte: now } },
+  ], $and: [{ $or: [{ promotionAttempts: { $exists: false } }, { promotionAttempts: { $lt: MAX_PROMOTION_ATTEMPTS } }] }] };
+}
+
+function claimUpdate(owner: string, leaseMs: number, now: Date): Document {
+  return { $set: { promotionStatus: 'PROCESSING' as const, promotionOwner: owner, promotionLeaseUntil: new Date(now.valueOf() + leaseMs) }, $inc: { promotionAttempts: 1 }, $unset: { promotionReason: '' } };
 }
 
 function rejectSensitiveInteraction(interaction: InteractionRecord): void {
