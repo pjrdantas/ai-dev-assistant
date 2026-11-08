@@ -31,6 +31,8 @@ jobs:
       AI_DEV_ASSISTANT_E3_007_MONGODB_URI: mongodb://127.0.0.1:27018/ci_e3_007?directConnection=true
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: actions/setup-node@v4
         with:
           node-version: 22.x
