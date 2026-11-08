@@ -62,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f audit-temporary.vsix
-          tar -tf audit-temporary.vsix | tee vsix-contents.txt
+          unzip -Z1 audit-temporary.vsix | tee vsix-contents.txt
           grep -q '^extension/package.json$' vsix-contents.txt
           grep -q '^extension/agents/ai-dev-assistant.agent.md$' vsix-contents.txt
           grep -q '^extension/out/src/interactionHookRunner.js$' vsix-contents.txt
