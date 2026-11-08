@@ -7,6 +7,7 @@ out/test/**
 out/**/*.map
 package-lock.json
 *.vsix
+media/Sem título.png
 *.log
 *.tsbuildinfo
 ETAPA_*
