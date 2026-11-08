@@ -102,5 +102,12 @@ jobs:
         run: npm run compile
       - name: Run Windows ACL and installation-security tests
         run: |
-          node --test --test-name-pattern="ACL|credenciais sintéticas|falha de ACL" out/test/mongoHookConfiguration.test.js
+          $ErrorActionPreference = 'Stop'
+          node --test --test-name-pattern="ACL|credenciais sintéticas|falha de ACL|alias SDDL" out/test/mongoHookConfiguration.test.js
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
           node --test out/test/interactionHookInstallation.test.js
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }

@@ -178,10 +178,15 @@ test('E3-001: URI com credenciais sintéticas fica somente no snapshot protegido
     assert.doesNotMatch(await readFile(installation.shellLauncher, 'utf8'), /synthetic-user|synthetic-password/);
     if (process.platform === 'win32') {
       const acl = windowsAclSddl(installation.mongoConfiguration);
-      assert.match(acl, /;SY\)/);
-      assert.match(acl, /;BA\)/);
-      assert.match(acl, new RegExp(currentWindowsSid()));
+      const currentSid = currentWindowsSid();
+      const identities = windowsAclIdentities(acl, currentSid);
+      assert.ok(identities.has('S-1-5-18'));
+      assert.ok(identities.has('S-1-5-32-544'));
+      assert.ok(identities.has(currentSid));
       assert.doesNotMatch(acl, /;BU\)|;AU\)|;WD\)/);
+      assert.equal(identities.has('S-1-5-32-545'), false);
+      assert.equal(identities.has('S-1-5-11'), false);
+      assert.equal(identities.has('S-1-1-0'), false);
       assert.doesNotMatch(acl, /synthetic-password/);
     }
   } finally {
@@ -202,11 +207,16 @@ test('E3-001: DACL controlada remove ACE ampla explícita preexistente do diret�
     await writeMongoHookConfiguration(config, { uri: 'mongodb://127.0.0.1:27017', database: 'synthetic_acl' });
     const directoryAcl = windowsAclSddl(directory);
     const fileAcl = windowsAclSddl(config);
+    const currentSid = currentWindowsSid();
     for (const acl of [directoryAcl, fileAcl]) {
       assert.doesNotMatch(acl, /;BU\)|;AU\)|;WD\)/);
-      assert.match(acl, /;BA\)/);
-      assert.match(acl, /;SY\)/);
-      assert.match(acl, new RegExp(currentWindowsSid()));
+      const identities = windowsAclIdentities(acl, currentSid);
+      assert.ok(identities.has('S-1-5-32-544'));
+      assert.ok(identities.has('S-1-5-18'));
+      assert.ok(identities.has(currentSid));
+      assert.equal(identities.has('S-1-5-32-545'), false);
+      assert.equal(identities.has('S-1-5-11'), false);
+      assert.equal(identities.has('S-1-1-0'), false);
     }
   } finally {
     await rm(home, { recursive: true, force: true });
@@ -229,6 +239,50 @@ function windowsAclSddl(path: string): string {
     try { unlinkSync(savePath); } catch { /* best effort cleanup */ }
   }
 }
+
+function windowsAclIdentities(sddl: string, currentSid: string, localAdministratorSid = process.platform === 'win32' ? localWindowsAdministratorSid() : undefined): Set<string> {
+  const identities = new Set<string>();
+  const aliases: Record<string, string> = {
+    SY: 'S-1-5-18',
+    BA: 'S-1-5-32-544',
+    BU: 'S-1-5-32-545',
+    AU: 'S-1-5-11',
+    WD: 'S-1-1-0',
+  };
+  for (const match of sddl.matchAll(/\(([^)]*)\)/g)) {
+    const fields = match[1]?.split(';');
+    if (fields === undefined || fields.length < 6 || fields[0] !== 'A' || !/(?:^|,)F(?:$|,)|(?:^|,)FA(?:$|,)/.test(fields[2] ?? '')) continue;
+    const identity = fields[5];
+    if (identity === undefined) continue;
+    if (identity === 'LA') {
+      if (localAdministratorSid === undefined) throw new Error('Local Administrator SID is required to resolve SDDL alias LA.');
+      assert.equal(currentSid, localAdministratorSid, 'SDDL alias LA must resolve to the current local Administrator SID.');
+      identities.add(localAdministratorSid);
+      continue;
+    }
+    identities.add(aliases[identity] ?? identity);
+  }
+  return identities;
+}
+
+function localWindowsAdministratorSid(): string {
+  const output = execFileSync('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    '(Get-LocalUser | Where-Object { $_.SID.Value -match \'-500$\' }).SID.Value',
+  ], { encoding: 'utf8', windowsHide: true });
+  const sid = output.match(/S-1-(?:\d+-)+500/)?.[0];
+  assert.ok(sid, 'Local Administrator SID not found.');
+  return sid;
+}
+
+test('E3-001: alias SDDL LA só resolve para o SID comprovado da conta Administrator local', () => {
+  const localAdministratorSid = 'S-1-5-21-100-200-300-500';
+  assert.ok(windowsAclIdentities('D:(A;;FA;;;LA)', localAdministratorSid, localAdministratorSid).has(localAdministratorSid));
+  assert.throws(() => windowsAclIdentities('D:(A;;FA;;;LA)', 'S-1-5-21-100-200-300-1001', localAdministratorSid), /current local Administrator SID/);
+  assert.equal(windowsAclIdentities('D:(D;;FA;;;SY)(A;;0;;;BA)(A;;FA;;;LA)', localAdministratorSid, localAdministratorSid).has('S-1-5-18'), false);
+});
 
 test('E3-001: validação de ACL usa SIDs e não depende do idioma do Windows', async (t) => {
   if (process.platform !== 'win32') { t.skip('ACL NTFS requer Windows'); return; }
