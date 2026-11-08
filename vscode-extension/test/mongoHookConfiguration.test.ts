@@ -39,18 +39,17 @@ test('E3-001: configuração personalizada direciona o runner e mudanças substi
   }
 });
 
-test('E3-001: runner captura interação no database temporário configurado', async (t) => {
+test('E3-001: runner captura interação no database temporário configurado', async () => {
   const database = `ai_dev_assistant_e3_001_${randomUUID().replaceAll('-', '')}`;
-  const client = new MongoClient(DEFAULT_MONGO_URI, { serverSelectionTimeoutMS: 1_500, connectTimeoutMS: 1_500 });
+  const testMongoUri = requiredHookTestMongoUri();
+  const client = new MongoClient(testMongoUri, { serverSelectionTimeoutMS: 1_500, connectTimeoutMS: 1_500 });
+  let home: string | undefined;
+  let connected = false;
   try {
     await client.connect();
-  } catch {
-    t.skip('MongoDB local indisponível');
-    return;
-  }
-  const home = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-e3-001-'));
-  try {
-    const installation = await installAgentScopedHookRunner(home, 'node', 'runner.js', { uri: DEFAULT_MONGO_URI, database });
+    connected = true;
+    home = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-e3-001-'));
+    const installation = await installAgentScopedHookRunner(home, 'node', 'runner.js', { uri: testMongoUri, database });
     const runner = join(process.cwd(), 'out', 'src', 'interactionHookRunner.js');
     await new Promise<void>((resolve, reject) => {
       const child = spawn(process.execPath, [runner, '--mongo-config', installation.mongoConfiguration], { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -62,9 +61,9 @@ test('E3-001: runner captura interação no database temporário configurado', a
     });
     assert.equal(await client.db(database).collection('interactions').countDocuments({ originalRequest: 'synthetic E3-001 prompt' }), 1);
   } finally {
-    await client.db(database).dropDatabase();
+    if (connected) await client.db(database).dropDatabase();
     await client.close();
-    await rm(home, { recursive: true, force: true });
+    if (home !== undefined) await rm(home, { recursive: true, force: true });
   }
 });
 
@@ -84,18 +83,17 @@ test('E3-005: stdin acima do limite encerra a captura sem ecoar conteúdo', asyn
   assert.doesNotMatch(result.stderr, /x{100}/);
 });
 
-test('E3-005: transcript acima do limite marca RESPONSE_UNAVAILABLE sem persistir resposta parcial', async (t) => {
+test('E3-005: transcript acima do limite marca RESPONSE_UNAVAILABLE sem persistir resposta parcial', async () => {
   const database = `ai_dev_assistant_e3_005_${randomUUID().replaceAll('-', '')}`;
-  const client = new MongoClient(DEFAULT_MONGO_URI, { serverSelectionTimeoutMS: 1_500, connectTimeoutMS: 1_500 });
+  const testMongoUri = requiredHookTestMongoUri();
+  const client = new MongoClient(testMongoUri, { serverSelectionTimeoutMS: 1_500, connectTimeoutMS: 1_500 });
+  let home: string | undefined;
+  let connected = false;
   try {
     await client.connect();
-  } catch {
-    t.skip('MongoDB local indisponível');
-    return;
-  }
-  const home = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-e3-005-'));
-  try {
-    const installation = await installAgentScopedHookRunner(home, 'node', 'runner.js', { uri: DEFAULT_MONGO_URI, database });
+    connected = true;
+    home = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-e3-005-'));
+    const installation = await installAgentScopedHookRunner(home, 'node', 'runner.js', { uri: testMongoUri, database });
     const transcript = join(home, 'oversized-transcript.json');
     await writeFile(transcript, Buffer.alloc(4 * 1024 * 1024 + 1, 0x78));
     const sessionId = 'synthetic-e3-005-session';
@@ -123,11 +121,27 @@ test('E3-005: transcript acima do limite marca RESPONSE_UNAVAILABLE sem persisti
     assert.equal(interaction?.promotionReason, 'TRANSCRIPT_TOO_LARGE');
     assert.equal('response' in (interaction ?? {}), false);
   } finally {
-    await client.db(database).dropDatabase();
+    if (connected) await client.db(database).dropDatabase();
     await client.close();
-    await rm(home, { recursive: true, force: true });
+    if (home !== undefined) await rm(home, { recursive: true, force: true });
   }
 });
+
+function requiredHookTestMongoUri(): string {
+  const uri = process.env.AI_DEV_ASSISTANT_E3_HOOK_MONGODB_URI?.trim();
+  if (uri === undefined || uri.length === 0) {
+    throw new Error('E3-001/E3-005 exigem AI_DEV_ASSISTANT_E3_HOOK_MONGODB_URI explícita em uma porta efêmera diferente de 27017.');
+  }
+  if (!uri.startsWith('mongodb://')) {
+    throw new Error('E3-001/E3-005 exigem uma URI mongodb:// explícita em uma porta efêmera diferente de 27017.');
+  }
+  const authority = uri.slice('mongodb://'.length).split(/[/?#]/)[0] ?? '';
+  const hosts = authority.slice(authority.lastIndexOf('@') + 1).split(',');
+  if (hosts.some((host) => !/:[0-9]+$/.test(host)) || hosts.some((host) => host.endsWith(':27017'))) {
+    throw new Error('E3-001/E3-005 exigem uma URI MongoDB explícita com porta diferente de 27017.');
+  }
+  return uri;
+}
 
 test('E3-001: configuração inválida falha explicitamente sem cair silenciosamente no default', async () => {
   const home = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-e3-001-'));
