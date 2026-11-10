@@ -271,6 +271,23 @@ export function activate(context: vscode.ExtensionContext): void {
       const [memoryStats, interactionCount] = await Promise.all([memory.statistics(), interactions.count()]);
       await vscode.window.showInformationMessage(`MongoDB conectado: ${status.uri}, database ${status.database}, ${memoryStats.active} memória(s) ativa(s), ${memoryStats.invalidated} invalidada(s), ${memoryStats.total} total, ${interactionCount} interação(ões).`);
     }),
+    vscode.commands.registerCommand('aiDevAssistant.migrateLegacyMongoIndexes', async () => {
+      const choice = await vscode.window.showWarningMessage(
+        'Migrar o índice legado do MongoDB? A operação criará e verificará um backup da coleção memories, verificará conflitos, criará o índice novo e só então removerá o índice legado.',
+        { modal: true },
+        'Migrar índices',
+      );
+      if (choice !== 'Migrar índices') return;
+      try {
+        const result = await connection.migrateLegacyIndexes();
+        await connection.ensureIndexes();
+        await vscode.window.showInformationMessage(
+          `${result.status === 'MIGRATED' ? 'Migração concluída' : 'Banco já migrado'}: ${result.documentCount} memória(s) preservada(s). Backup verificado em ${result.backupCollection}, SHA-256 ${result.backupSha256}.`,
+        );
+      } catch (error) {
+        await vscode.window.showWarningMessage(`Migração de índices MongoDB não concluída: ${message(error)}`);
+      }
+    }),
     vscode.commands.registerCommand('aiDevAssistant.migrateLocalMemoryToMongoDB', async () => {
       const source = vscode.Uri.joinPath(context.globalStorageUri, 'knowledge-v1.json').fsPath;
       try {

@@ -1,4 +1,6 @@
-import { Db, MongoClient, MongoClientOptions } from 'mongodb';
+import { createHash } from 'node:crypto';
+import { EJSON } from 'bson';
+import { Db, MongoClient, MongoClientOptions, type Collection, type Document, type IndexDescription } from 'mongodb';
 
 export interface MongoConnectionConfiguration {
   readonly uri: string;
@@ -13,6 +15,16 @@ export interface MongoConnectionStatus {
 }
 
 export type MongoConnectionDiagnosticLogger = (line: string) => void;
+
+export const CURRENT_MEMORY_EXACT_INDEX = 'memories_active_exact_unique_v2';
+export const LEGACY_MEMORY_EXACT_INDEX = 'memories_active_exact_unique';
+
+export interface MongoLegacyIndexMigrationReport {
+  readonly status: 'MIGRATED' | 'ALREADY_MIGRATED';
+  readonly documentCount: number;
+  readonly backupCollection: string;
+  readonly backupSha256: string;
+}
 
 export class MongoMemoryUnavailableError extends Error {
   public constructor(cause: unknown) {
@@ -95,6 +107,56 @@ export class MongoConnectionManager {
 
   public currentConfiguration(): MongoConnectionConfiguration { return this.configuration; }
 
+  public async migrateLegacyIndexes(): Promise<MongoLegacyIndexMigrationReport> {
+    const db = await this.database();
+    const memories = db.collection('memories');
+    const indexes = await listIndexes(memories);
+    const legacy = indexes.find((index) => index.name === LEGACY_MEMORY_EXACT_INDEX);
+    const current = indexes.find((index) => index.name === CURRENT_MEMORY_EXACT_INDEX);
+
+    if (legacy !== undefined && !isLegacyExactIndex(legacy) && !isCurrentExactIndex(legacy)) {
+      throw new Error(`O índice ${LEGACY_MEMORY_EXACT_INDEX} existe, mas sua definição não corresponde ao legado ou ao contrato atual conhecido; migração interrompida por segurança.`);
+    }
+    if (current !== undefined && !isCurrentExactIndex(current)) {
+      throw new Error(`O índice ${CURRENT_MEMORY_EXACT_INDEX} existe com definição inesperada; migração interrompida por segurança.`);
+    }
+
+    if (legacy === undefined && current !== undefined) {
+      return { status: 'ALREADY_MIGRATED', documentCount: await memories.countDocuments(), backupCollection: 'não necessário', backupSha256: await digestDocuments(memories) };
+    }
+
+    const backup = await ensureMemoriesBackup(db, legacy);
+    if (legacy !== undefined) {
+      const duplicates = await findCurrentIdentityConflicts(memories);
+      if (duplicates.length > 0) {
+        throw new Error(`A migração foi interrompida: ${duplicates.length} conflito(s) de unicidade no contrato atual (${duplicates.slice(0, 3).join('; ')}).`);
+      }
+      await memories.createIndex(
+        { normalizedPrompt: 1, contextKey: 1, provenance: 1, scope: 1, workspaceKey: 1 },
+        { name: CURRENT_MEMORY_EXACT_INDEX, unique: true, partialFilterExpression: currentMemoryExactPartialFilter() },
+      );
+      const afterCreate = await listIndexes(memories);
+      const created = afterCreate.find((index) => index.name === CURRENT_MEMORY_EXACT_INDEX);
+      if (created === undefined || !isCurrentExactIndex(created)) {
+        throw new Error('O novo índice único não pôde ser validado após a criação; o índice legado não foi removido.');
+      }
+      await memories.dropIndex(LEGACY_MEMORY_EXACT_INDEX);
+      const afterDrop = await listIndexes(memories);
+      if (afterDrop.some((index) => index.name === LEGACY_MEMORY_EXACT_INDEX)) {
+        throw new Error('O índice legado ainda existe após a tentativa de remoção; a migração requer verificação manual.');
+      }
+      return { status: 'MIGRATED', documentCount: backup.documentCount, backupCollection: backup.collection, backupSha256: backup.sha256 };
+    }
+
+    if (current === undefined) {
+      await memories.createIndex(
+        { normalizedPrompt: 1, contextKey: 1, provenance: 1, scope: 1, workspaceKey: 1 },
+        { name: CURRENT_MEMORY_EXACT_INDEX, unique: true, partialFilterExpression: currentMemoryExactPartialFilter() },
+      );
+    }
+    return { status: 'ALREADY_MIGRATED', documentCount: backup.documentCount, backupCollection: backup.collection, backupSha256: backup.sha256 };
+  }
+
   private async connect(): Promise<Db> {
     const client = this.client ??= this.clientFactory(this.configuration.uri, {
       serverSelectionTimeoutMS: 1_500,
@@ -147,10 +209,17 @@ export class MongoConnectionManager {
       if (!isMissingNamespace(error)) throw error;
       existing = [];
     }
-    const legacyExact = existing.find((index) => index.name === 'memories_active_exact_unique');
-    const legacyKey = legacyExact?.key !== undefined
-      && JSON.stringify(legacyExact.key) === JSON.stringify({ normalizedPrompt: 1, contextKey: 1 });
-    if (legacyKey) throw new MongoSchemaMigrationRequiredError();
+    const legacyExact = existing.find((index) => index.name === LEGACY_MEMORY_EXACT_INDEX);
+    if (legacyExact !== undefined) {
+      if (isCurrentExactIndex(legacyExact)) {
+        // A versão defeituosa podia createIndexes() com o nome legado depois de uma execução parcial.
+        // O comando explícito ainda renomeia esse índice após backup; a proteção permanece ativa.
+      } else if (!isLegacyExactIndex(legacyExact)) {
+        throw new Error(`O índice ${LEGACY_MEMORY_EXACT_INDEX} possui uma definição inesperada.`);
+      } else {
+        throw new MongoSchemaMigrationRequiredError();
+      }
+    }
     await Promise.all([
       db.collection('memories').createIndexes([
         { key: { contextKey: 1 }, name: 'memories_contextKey' },
@@ -159,7 +228,7 @@ export class MongoConnectionManager {
         { key: { updatedAt: -1 }, name: 'memories_updatedAt' },
         { key: { contextKey: 1, active: 1 }, name: 'memories_contextKey_active' },
         { key: { active: 1, scope: 1, workspaceKey: 1, provenance: 1, contextKey: 1 }, name: 'memories_semantic_scope' },
-        { key: { normalizedPrompt: 1, contextKey: 1, provenance: 1, scope: 1, workspaceKey: 1 }, name: 'memories_active_exact_unique', unique: true, partialFilterExpression: { active: true, provenance: { $exists: true }, scope: { $exists: true } } },
+        { key: { normalizedPrompt: 1, contextKey: 1, provenance: 1, scope: 1, workspaceKey: 1 }, name: CURRENT_MEMORY_EXACT_INDEX, unique: true, partialFilterExpression: currentMemoryExactPartialFilter() },
       ]),
       db.collection('interactions').createIndexes([
         { key: { sessionId: 1, createdAt: -1 }, name: 'interactions_sessionId_createdAt' },
@@ -171,6 +240,78 @@ export class MongoConnectionManager {
       ]),
     ]);
   }
+}
+
+const BACKUP_COLLECTION = 'memories_legacy_index_backup_v1';
+const BACKUP_METADATA_COLLECTION = 'memories_legacy_index_backup_meta_v1';
+const BACKUP_METADATA_ID = 'memories_active_exact_unique';
+
+function currentMemoryExactPartialFilter(): Document {
+  return { active: true, provenance: { $exists: true }, scope: { $exists: true } };
+}
+
+function isLegacyExactIndex(index: IndexDescription): boolean {
+  return JSON.stringify(index.key) === JSON.stringify({ normalizedPrompt: 1, contextKey: 1 })
+    && index.unique === true
+    && JSON.stringify(index.partialFilterExpression) === JSON.stringify({ active: true });
+}
+
+function isCurrentExactIndex(index: IndexDescription): boolean {
+  return JSON.stringify(index.key) === JSON.stringify({ normalizedPrompt: 1, contextKey: 1, provenance: 1, scope: 1, workspaceKey: 1 })
+    && index.unique === true
+    && JSON.stringify(index.partialFilterExpression) === JSON.stringify(currentMemoryExactPartialFilter());
+}
+
+async function listIndexes(collection: { listIndexes: () => { toArray: () => Promise<IndexDescription[]> } }): Promise<IndexDescription[]> {
+  return typeof collection.listIndexes === 'function' ? collection.listIndexes().toArray() : [];
+}
+
+async function ensureMemoriesBackup(db: Db, legacy: IndexDescription | undefined): Promise<{ collection: string; documentCount: number; sha256: string }> {
+  const memories = db.collection('memories');
+  const backup = db.collection(BACKUP_COLLECTION);
+  const metadata = db.collection<Document & { _id: string }>(BACKUP_METADATA_COLLECTION);
+  const sourceCount = await memories.countDocuments();
+  const sourceSha256 = await digestDocuments(memories);
+  const existingMetadata = await metadata.findOne<{ sourceCount: number; sourceSha256: string; legacyIndex: IndexDescription }>({ _id: BACKUP_METADATA_ID });
+  const backupExists = (await db.listCollections({ name: BACKUP_COLLECTION }).toArray()).length > 0;
+
+  if (!backupExists) {
+    await memories.aggregate([{ $match: {} }, { $out: BACKUP_COLLECTION }]).toArray();
+  }
+
+  const backupCount = await backup.countDocuments();
+  const backupSha256 = await digestDocuments(backup);
+  if (backupCount !== sourceCount || backupSha256 !== sourceSha256) {
+    throw new Error(`O backup verificável não corresponde à coleção memories (origem ${sourceCount}/${sourceSha256}, backup ${backupCount}/${backupSha256}).`);
+  }
+
+  if (existingMetadata !== null && (existingMetadata.sourceCount !== sourceCount || existingMetadata.sourceSha256 !== sourceSha256)) {
+    throw new Error('Já existe um backup de migração com conteúdo diferente; nenhum índice foi alterado.');
+  }
+  if (existingMetadata === null) {
+    if (legacy === undefined) {
+      throw new Error('Não foi possível verificar a definição do índice legado para registrar o backup.');
+    }
+    await metadata.insertOne({ _id: BACKUP_METADATA_ID, sourceCollection: 'memories', backupCollection: BACKUP_COLLECTION, sourceCount, sourceSha256, legacyIndex: legacy, createdAt: new Date() });
+  }
+  const verified = await metadata.findOne<{ sourceCount: number; sourceSha256: string }>({ _id: BACKUP_METADATA_ID });
+  if (verified?.sourceCount !== sourceCount || verified.sourceSha256 !== sourceSha256) throw new Error('A evidência do backup não pôde ser verificada.');
+  return { collection: BACKUP_COLLECTION, documentCount: sourceCount, sha256: sourceSha256 };
+}
+
+async function digestDocuments(collection: Collection<Document>): Promise<string> {
+  const hash = createHash('sha256');
+  for await (const document of collection.find({}).sort({ _id: 1 })) hash.update(EJSON.stringify(document, { relaxed: false }));
+  return hash.digest('hex');
+}
+
+async function findCurrentIdentityConflicts(collection: Collection<Document>): Promise<string[]> {
+  const conflicts = await collection.aggregate([
+    { $match: currentMemoryExactPartialFilter() },
+    { $group: { _id: { normalizedPrompt: '$normalizedPrompt', contextKey: '$contextKey', provenance: '$provenance', scope: '$scope', workspaceKey: { $ifNull: ['$workspaceKey', null] } }, count: { $sum: 1 } } },
+    { $match: { count: { $gt: 1 } } },
+  ]).toArray();
+  return conflicts.map((conflict) => `${EJSON.stringify(conflict._id, { relaxed: false })}: ${String(conflict.count)}`);
 }
 
 export function redactUri(uri: string): string {

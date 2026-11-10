@@ -66,6 +66,10 @@
         "title": "AI Dev Assistant: MongoDB Status"
       },
       {
+        "command": "aiDevAssistant.migrateLegacyMongoIndexes",
+        "title": "AI Dev Assistant: Migrate Legacy MongoDB Indexes"
+      },
+      {
         "command": "aiDevAssistant.migrateLocalMemoryToMongoDB",
         "title": "AI Dev Assistant: Migrate Local Memory to MongoDB"
       },
