@@ -13,7 +13,7 @@ import { MongoMemoryStore } from './mongoMemoryStore.js';
 import { memoryDisplayTitle } from './memoryDisplay.js';
 import { estimateStoredMemoryTokens } from './tokenEstimation.js';
 import { VscodeProjectContextProvider } from './vscodeProjectContextProvider.js';
-import { resolveAud13WorkspaceMongoConfiguration, readMongoHookConfiguration } from './mongoHookConfiguration.js';
+import { DEFAULT_MONGO_DATABASE, DEFAULT_MONGO_URI, normalizeMongoHookConfiguration, readMongoHookConfiguration } from './mongoHookConfiguration.js';
 import { MongoHookConfigurationCoordinator } from './mongoHookConfigurationCoordinator.js';
 import { ControlCenterTreeModel } from './controlCenter.js';
 
@@ -43,20 +43,12 @@ class ControlCenterTreeDataProvider implements vscode.TreeDataProvider<ControlCe
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('AI Dev Assistant');
   const extensionVersion = typeof context.extension.packageJSON?.version === 'string' ? context.extension.packageJSON.version : 'unknown';
-  output.appendLine(`AI Dev Assistant AUD-13 workspace-routed fix active: id=${context.extension.id}, version=${extensionVersion}`);
-  const workspacePaths = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
-  let effectiveMongoConfiguration;
-  try {
-    effectiveMongoConfiguration = resolveAud13WorkspaceMongoConfiguration(workspacePaths);
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : 'workspace não autorizado';
-    output.appendLine(`Mongo memory blocked before connection: ${reason}`);
-    context.subscriptions.push(output);
-    return;
-  }
-  const mongoConfiguration = () => resolveAud13WorkspaceMongoConfiguration(
-    (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
-  );
+  output.appendLine(`AI Dev Assistant extension active: id=${context.extension.id}, version=${extensionVersion}`);
+  const mongoConfiguration = () => normalizeMongoHookConfiguration({
+    uri: vscode.workspace.getConfiguration('aiDevAssistant.mongodb').get<string>('uri', DEFAULT_MONGO_URI),
+    database: vscode.workspace.getConfiguration('aiDevAssistant.mongodb').get<string>('database', DEFAULT_MONGO_DATABASE),
+  });
+  const effectiveMongoConfiguration = mongoConfiguration();
   output.appendLine(`MongoDB effective configuration: uri=${redactUri(effectiveMongoConfiguration.uri)}, database=${effectiveMongoConfiguration.database}`);
   const connection = new MongoConnectionManager(effectiveMongoConfiguration, undefined, (line) => output.appendLine(line));
   const memory = new MongoMemoryStore(connection);
@@ -341,7 +333,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     new vscode.Disposable(() => { void connection.close(); }),
   );
-  // Experimental AUD-13 build: hooks are never installed or reconciled automatically.
+  // Hooks are installed or removed only through the explicit commands above.
 }
 
 function formatNumber(value: number): string { return value.toLocaleString('pt-BR'); }

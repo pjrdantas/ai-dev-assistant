@@ -8,9 +8,8 @@ disponível. Não instale Java, backend, Docker ou daemon do AI Dev Assistant. M
 
 ## Roteiro manual de cenário real
 
-1. Para a release publicada, instale `ai-dev-assistant-0.1.12.vsix` com
-   `code --install-extension`. A próxima candidata é `0.1.13` e ainda não foi
-   publicada; não a trate como release disponível.
+1. Para a release publicada, instale `ai-dev-assistant-0.1.14.vsix` com
+   `code --install-extension`.
 2. Abra Copilot Chat e confirme **AI Dev Assistant** no seletor de Agents.
 3. Selecione o agente, abra o model picker e alterne entre modelos Copilot disponíveis.
    O agente deve continuar selecionado; não existe seletor de modelo do plugin.
@@ -156,10 +155,22 @@ O método e o formato estão em [aud-13-token-economy.md](aud-13-token-economy.m
 
 ## Versões e atualização
 
-`0.1.12` é a versão publicada de referência neste lote. `0.1.13` é somente candidata
-de trabalho, ainda não publicada e sem mudança de versão neste lote. Para atualizar,
-instale o VSIX candidato em um perfil descartável, preserve a instalação cotidiana e
-confirme o agente, hooks, ferramentas e memória antes de substituir qualquer release.
+`0.1.14` é a versão de produção deste lote. Ela restaura os padrões configuráveis
+`mongodb://127.0.0.1:27017` e `ai_dev_assistant`; o usuário pode substituir ambos pelas
+Settings `aiDevAssistant.mongodb.uri` e `aiDevAssistant.mongodb.database`. O roteamento
+experimental AUD-13 por workspace e porta 27019 não faz parte da release. Para atualizar,
+instale o VSIX em um perfil descartável, preserve a instalação cotidiana e confirme o
+agente, hooks, ferramentas e memória antes de substituir qualquer release.
+
+A captura automática é opt-in: a extensão não instala nem reconcilia launchers na
+ativação. O comando explícito de habilitação instala somente os launchers privados
+gerenciados pelo AI Dev Assistant; não restaura lançadores antigos nem altera arquivos
+de usuário de outros produtos.
+
+As classificações NONE, PARTIAL e FULL, embeddings, deduplicação e isolamento por
+workspace foram preservados. As estimativas locais de tokens não representam consumo ou
+cobrança do GitHub Copilot; a eficiência de 50% para PARTIAL e 80% para FULL permanece
+não homologada.
 Para desinstalar, use `code --uninstall-extension ai-dev-assistant-local.ai-dev-assistant`
 e remova apenas dados locais após revisar o consentimento; a extensão não apaga o
 MongoDB automaticamente.

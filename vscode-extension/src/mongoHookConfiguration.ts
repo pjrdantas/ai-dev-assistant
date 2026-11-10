@@ -5,18 +5,6 @@ import { dirname, join } from 'node:path';
 
 export const DEFAULT_MONGO_URI = 'mongodb://127.0.0.1:27017';
 export const DEFAULT_MONGO_DATABASE = 'ai_dev_assistant';
-export const AUD13_MONGO_URI = 'mongodb://127.0.0.1:27019';
-export const AUD13_WORKSPACE_DATABASES = {
-  'workspace-a-partial-cycle-20261109': 'ai_dev_assistant_aud13_20261109_control',
-  'workspace-b-partial-cycle-20261109': 'ai_dev_assistant_aud13_20261109_partial',
-} as const;
-
-export class Aud13WorkspaceNotAuthorizedError extends Error {
-  public constructor(workspacePaths: readonly string[]) {
-    super(`O VSIX experimental AUD-13 bloqueou a memória: workspace não autorizado (${workspacePaths.join(', ') || 'nenhum'}).`);
-    this.name = 'Aud13WorkspaceNotAuthorizedError';
-  }
-}
 
 export interface MongoHookConfiguration {
   readonly uri: string;
@@ -49,32 +37,6 @@ export function normalizeMongoHookConfiguration(configuration: Partial<MongoHook
 
 export function defaultMongoHookConfiguration(): MongoHookConfiguration {
   return { uri: DEFAULT_MONGO_URI, database: DEFAULT_MONGO_DATABASE };
-}
-
-/** Runtime route used by the manual AUD-13 VSIX; audit ports are never accepted. */
-export function normalizeAud13RuntimeMongoConfiguration(configuration: Partial<MongoHookConfiguration>): MongoHookConfiguration {
-  const normalized = normalizeMongoHookConfiguration(configuration);
-  let parsed: URL;
-  try {
-    parsed = new URL(normalized.uri);
-  } catch {
-    throw new MongoHookConfigurationError('URI MongoDB AUD-13 inválida.');
-  }
-  if (parsed.protocol !== 'mongodb:' || parsed.hostname !== '127.0.0.1' || parsed.port !== '27019') {
-    throw new MongoHookConfigurationError('O teste AUD-13 exige mongodb://127.0.0.1:27019; as portas 27017 e 27018 são proibidas.');
-  }
-  return normalized;
-}
-
-/** Resolves the experimental AUD-13 target before a Mongo client/store exists. */
-export function resolveAud13WorkspaceMongoConfiguration(workspacePaths: readonly string[]): MongoHookConfiguration {
-  if (workspacePaths.length !== 1) throw new Aud13WorkspaceNotAuthorizedError(workspacePaths);
-  const workspaceName = workspacePaths[0]!.replaceAll('\\', '/').replace(/\/+$/, '').split('/').at(-1)?.toLowerCase();
-  const database = workspaceName === undefined
-    ? undefined
-    : AUD13_WORKSPACE_DATABASES[workspaceName as keyof typeof AUD13_WORKSPACE_DATABASES];
-  if (database === undefined) throw new Aud13WorkspaceNotAuthorizedError(workspacePaths);
-  return normalizeAud13RuntimeMongoConfiguration({ uri: AUD13_MONGO_URI, database });
 }
 
 export function mongoHookConfigurationPath(directory: string): string {

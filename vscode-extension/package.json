@@ -2,7 +2,7 @@
   "name": "ai-dev-assistant",
   "displayName": "AI Dev Assistant",
   "description": "Custom Agent para GitHub Copilot com memória técnica local, busca semântica e reutilização de soluções.",
-  "version": "0.1.13-aud13-fix",
+  "version": "0.1.14",
   "publisher": "ai-dev-assistant-local",
   "author": {
     "name": "Paulo Dantas"
@@ -162,13 +162,13 @@
       "properties": {
         "aiDevAssistant.mongodb.uri": {
           "type": "string",
-          "default": "mongodb://127.0.0.1:27019",
+          "default": "mongodb://127.0.0.1:27017",
           "description": "URI do MongoDB local. Credenciais não devem ser gravadas em configurações compartilhadas do workspace."
         },
         "aiDevAssistant.mongodb.database": {
           "type": "string",
-          "default": "",
-          "description": "Ignorado no build experimental AUD-13; o database é roteado exclusivamente pela raiz autorizada do workspace."
+          "default": "ai_dev_assistant",
+          "description": "Nome do database local do AI Dev Assistant."
         }
       }
     }
