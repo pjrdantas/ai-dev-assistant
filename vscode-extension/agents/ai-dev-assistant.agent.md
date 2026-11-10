@@ -2,21 +2,6 @@
 name: AI Dev Assistant
 description: Agente de desenvolvimento do GitHub Copilot com memória local reutilizável.
 argument-hint: Descreva a tarefa de desenvolvimento.
-hooks:
-  UserPromptSubmit:
-    - type: command
-      command: 'sh "$HOME/.copilot/ai-dev-assistant/run-interaction-hook.sh"'
-      windows: 'powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.copilot\\ai-dev-assistant\\run-interaction-hook.ps1"'
-      linux: 'sh "$HOME/.copilot/ai-dev-assistant/run-interaction-hook.sh"'
-      osx: 'sh "$HOME/.copilot/ai-dev-assistant/run-interaction-hook.sh"'
-      timeoutSec: 5
-  Stop:
-    - type: command
-      command: 'sh "$HOME/.copilot/ai-dev-assistant/run-interaction-hook.sh"'
-      windows: 'powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.copilot\\ai-dev-assistant\\run-interaction-hook.ps1"'
-      linux: 'sh "$HOME/.copilot/ai-dev-assistant/run-interaction-hook.sh"'
-      osx: 'sh "$HOME/.copilot/ai-dev-assistant/run-interaction-hook.sh"'
-      timeoutSec: 5
 ---
 
 # AI Dev Assistant

@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { normalizeAud13RuntimeMongoConfiguration, resolveAud13WorkspaceMongoConfiguration } from '../src/mongoHookConfiguration.js';
+
 const extensionRoot = process.cwd();
 
 test('contribui o Custom Agent e as tools de memória sem restringir ferramentas nativas ou modelo', async () => {
@@ -36,21 +38,16 @@ test('contribui o Custom Agent e as tools de memória sem restringir ferramentas
   assert.deepEqual(manifest.contributes.views?.aiDevAssistant, [
     { id: 'aiDevAssistant.view', name: 'Controle' },
   ]);
-  assert.equal(manifest.contributes.configuration?.properties?.['aiDevAssistant.mongodb.uri']?.default, 'mongodb://127.0.0.1:27017');
-  assert.equal(manifest.contributes.configuration?.properties?.['aiDevAssistant.mongodb.database']?.default, 'ai_dev_assistant');
+  assert.equal(manifest.contributes.configuration?.properties?.['aiDevAssistant.mongodb.uri']?.default, 'mongodb://127.0.0.1:27019');
+  assert.equal(manifest.contributes.configuration?.properties?.['aiDevAssistant.mongodb.database']?.default, '');
 
   const agent = (await readFile(join(extensionRoot, agentPath!), 'utf8')).replace(/\r\n/g, '\n');
   assert.match(agent, /^---[\s\S]*name: AI Dev Assistant/m);
   assert.doesNotMatch(agent, /^model:/m);
   assert.doesNotMatch(agent, /^tools:/m);
-  assert.match(agent, /^hooks:\n  UserPromptSubmit:/m);
-  assert.match(agent, /^  Stop:\n    - type: command/m);
+  assert.doesNotMatch(agent, /^hooks:/m);
+  assert.doesNotMatch(agent, /\.copilot[\\/]ai-dev-assistant/);
   assert.doesNotMatch(agent, /decision:\s*block/);
-  assert.match(agent, /windows: 'powershell -NoProfile/);
-  assert.match(agent, /linux: 'sh /);
-  assert.match(agent, /osx: 'sh /);
-  assert.match(agent, /timeoutSec: 5/);
-  assert.doesNotMatch(agent, /timeout: 5/);
   assert.doesNotMatch(agent, /\.copilot\/hooks/);
   assert.match(agent, /#tool:searchMemory/);
   assert.match(agent, /#tool:saveMemory/);
@@ -92,6 +89,10 @@ test('contribui o Custom Agent e as tools de memória sem restringir ferramentas
   assert.doesNotMatch(extension, /chat\.useCustomAgentHooks/);
   assert.match(extension, /uninstallAgentScopedHookRunner/);
   assert.doesNotMatch(extension, /\.copilot', 'hooks'/);
+  assert.match(extension, /resolveAud13WorkspaceMongoConfiguration/);
+  assert.doesNotMatch(extension, /configurationCoordinator\.reconcile\(/);
+  assert.doesNotMatch(extension, /onDidChangeConfiguration/);
+  assert.match(packageJson, /"version": "0\.1\.13-aud13-fix"/);
 
   const hookRunner = await readFile(join(extensionRoot, 'src', 'interactionHookRunner.ts'), 'utf8');
   assert.match(hookRunner, /input\.hook_event_name !== 'UserPromptSubmit'/);
@@ -109,4 +110,36 @@ test('instrui o agent loop a consultar e salvar memória automaticamente', async
   const packageJson = await readFile(join(extensionRoot, 'package.json'), 'utf8');
   assert.match(packageJson, /Use esta tool antes de produzir uma nova solução técnica/);
   assert.match(packageJson, /use esta tool antes da resposta final para salvá-la automaticamente/);
+});
+
+test('AUD-13 roteia o runtime para 27019 e bloqueia 27017/27018', () => {
+  assert.deepEqual(
+    normalizeAud13RuntimeMongoConfiguration({ uri: 'mongodb://127.0.0.1:27019', database: 'ai_dev_assistant' }),
+    { uri: 'mongodb://127.0.0.1:27019', database: 'ai_dev_assistant' },
+  );
+  for (const port of [27017, 27018]) {
+    assert.throws(
+      () => normalizeAud13RuntimeMongoConfiguration({ uri: `mongodb://127.0.0.1:${port}`, database: 'ai_dev_assistant' }),
+      /27019|27017 e 27018/,
+    );
+  }
+});
+
+test('AUD-13 roteia somente os dois workspaces autorizados e nunca usa o fallback', () => {
+  assert.deepEqual(
+    resolveAud13WorkspaceMongoConfiguration(['C:/Projeto/audit/workspace-A-partial-cycle-20261109']),
+    { uri: 'mongodb://127.0.0.1:27019', database: 'ai_dev_assistant_aud13_20261109_control' },
+  );
+  assert.deepEqual(
+    resolveAud13WorkspaceMongoConfiguration(['C:/Projeto/audit/workspace-B-partial-cycle-20261109']),
+    { uri: 'mongodb://127.0.0.1:27019', database: 'ai_dev_assistant_aud13_20261109_partial' },
+  );
+  assert.throws(
+    () => resolveAud13WorkspaceMongoConfiguration(['C:/Projeto/audit/other-workspace']),
+    /não autorizado/,
+  );
+  assert.throws(
+    () => resolveAud13WorkspaceMongoConfiguration([]),
+    /não autorizado/,
+  );
 });

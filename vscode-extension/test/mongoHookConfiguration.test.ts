@@ -162,7 +162,8 @@ test('E3-001: o runner não deve resolver URI/database por ambiente ou defaults 
 
 test('E3-001: a extensão e o runner compartilham as Settings Mongo sem duplicar defaults', async () => {
   const extension = await readFile(join(process.cwd(), 'src', 'extension.ts'), 'utf8');
-  assert.match(extension, /getConfiguration\('aiDevAssistant\.mongodb'\)/);
+  assert.match(extension, /resolveAud13WorkspaceMongoConfiguration/);
+  assert.doesNotMatch(extension, /getConfiguration\('aiDevAssistant\.mongodb'\)/);
   assert.match(extension, /readConfiguration: mongoConfiguration/);
   assert.match(extension, /syncInstalledHook:[\s\S]*installAgentScopedHookRunner/);
   assert.match(await readFile(join(process.cwd(), 'src', 'interactionHookRunner.ts'), 'utf8'), /loadMongoHookConfiguration/);

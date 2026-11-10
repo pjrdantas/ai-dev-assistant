@@ -8,6 +8,9 @@ coverage/
 
 # Pacotes e logs gerados
 *.vsix
+vscode-extension/AUD_*_RESULTS.json
+vscode-extension/dependency-licenses.json
+vscode-extension/sbom.cdx.json
 *.log
 logs/
 npm-debug.log*
@@ -24,10 +27,7 @@ pnpm-debug.log*
 
 # VS Code e IDEs
 .vscode/*
-!.vscode/extensions.json
-!.vscode/launch.json
-!.vscode/settings.json
-!.vscode/tasks.json
+.vscode/
 .idea/
 *.iml
 
