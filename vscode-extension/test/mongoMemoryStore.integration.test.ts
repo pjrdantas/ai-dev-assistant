@@ -7,7 +7,7 @@ import type { Document } from 'mongodb';
 import { ProjectContext, ProjectContextProvider } from '../src/contracts.js';
 import { LocalEmbeddingProvider } from '../src/localEmbeddingProvider.js';
 import { LocalMemoryService } from '../src/localMemoryService.js';
-import { CURRENT_MEMORY_EXACT_INDEX, LEGACY_MEMORY_EXACT_INDEX, MongoConnectionManager, MongoMemoryUnavailableError, MongoSchemaMigrationRequiredError } from '../src/mongoConnectionManager.js';
+import { MongoConnectionManager, MongoMemoryUnavailableError } from '../src/mongoConnectionManager.js';
 import { MongoMemoryStore } from '../src/mongoMemoryStore.js';
 import { MongoInteractionStore } from '../src/mongoInteractionStore.js';
 import { InteractionPromotionService } from '../src/interactionPromotionService.js';
@@ -80,14 +80,13 @@ test('MongoDB real: estatísticas isolam o workspace selecionado e rejeitam orig
     await connection.close();
   }
 });
-
 test('MongoDB real: save -> exact e candidato semântico Maven/pom.xml', async (t) => {
   const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   try {
     let database;
     try { database = await connection.database(); } catch (error) { if (error instanceof MongoMemoryUnavailableError) { t.skip('MongoDB local indisponível'); return; } throw error; }
     await connection.ensureIndexes();
-    assert.ok((await database.collection('memories').indexes()).some((index) => index.name === CURRENT_MEMORY_EXACT_INDEX));
+    assert.ok((await database.collection('memories').indexes()).some((index) => index.name === 'memories_active_exact_unique'));
     assert.ok((await database.collection('interactions').indexes()).some((index) => index.name === 'interactions_interactionId_unique'));
     const embeddings: LocalEmbeddingProvider = { async generate(prompt) { return prompt.includes('procure conhecimento') ? [0.8, 0.6] : [1, 0]; } };
     const store = new MongoMemoryStore(connection);
@@ -359,7 +358,7 @@ test('MongoDB real: deduplicação aplica identidade no Mongo e preserva a semâ
   }
 });
 
-test('MongoDB real: migra índice legado com backup verificável e preserva documentos', async (t) => {
+test('MongoDB real: migra índice legado sem perder memórias', async (t) => {
   const connection = new MongoConnectionManager({ uri: testMongoUri, database: `ai_dev_assistant_test_${randomUUID().replaceAll('-', '')}` });
   try {
     let database;
@@ -367,25 +366,17 @@ test('MongoDB real: migra índice legado com backup verificável e preserva docu
     const timestamp = new Date('2026-01-01T00:00:00.000Z');
     const memories = database.collection<Document & { _id: string; response?: string }>('memories');
     await memories.insertOne({ _id: 'legacy-index-data', schemaVersion: 2, originalRequest: 'legado', normalizedPrompt: 'legado', contextKey: 'ctx', response: 'preservar', embedding: [1, 0], active: true, createdAt: timestamp, lastUsedAt: timestamp, reuseCount: 0 });
-    await memories.createIndex({ normalizedPrompt: 1, contextKey: 1 }, { name: LEGACY_MEMORY_EXACT_INDEX, unique: true, partialFilterExpression: { active: true } });
+    await memories.createIndex({ normalizedPrompt: 1, contextKey: 1 }, { name: 'memories_active_exact_unique', unique: true, partialFilterExpression: { active: true } });
 
-    await assert.rejects(connection.ensureIndexes(), (error: unknown) => {
-      assert.ok(error instanceof MongoSchemaMigrationRequiredError);
-      assert.match((error as Error).message, /índice legado/);
-      return true;
-    });
-    const before = await memories.findOne({ _id: 'legacy-index-data' });
-    const migration = await connection.migrateLegacyIndexes();
-    assert.equal(migration.status, 'MIGRATED');
-    assert.equal(migration.documentCount, 1);
-    assert.match(migration.backupSha256, /^[0-9a-f]{64}$/);
-    assert.equal((await memories.indexes()).some((index) => index.name === LEGACY_MEMORY_EXACT_INDEX), false);
-    assert.equal((await memories.indexes()).some((index) => index.name === CURRENT_MEMORY_EXACT_INDEX), true);
+    const result = await connection.migrateLegacyIndexes();
+    assert.deepEqual(result, { status: 'MIGRATED', preservedMemories: 1 });
+    await connection.ensureIndexes();
     assert.equal(await memories.countDocuments({ _id: 'legacy-index-data' }), 1);
-    assert.deepEqual(await memories.findOne({ _id: 'legacy-index-data' }), before);
-    const rerun = await connection.migrateLegacyIndexes();
-    assert.equal(rerun.status, 'ALREADY_MIGRATED');
-    await assert.doesNotReject(() => connection.ensureIndexes());
+    assert.equal((await memories.findOne({ _id: 'legacy-index-data' }))?.response, 'preservar');
+    const migrated = await memories.indexes();
+    assert.deepEqual(migrated.find((index) => index.name === 'memories_active_exact_unique')?.key, {
+      normalizedPrompt: 1, contextKey: 1, provenance: 1, scope: 1, workspaceKey: 1,
+    });
   } finally {
     try { await (await connection.database()).dropDatabase(); } catch { /* no database to clean */ }
     await connection.close();
@@ -773,3 +764,5 @@ test('remove apenas o prefixo interno da tool', () => {
   assert.equal(stripToolReference(`'${SAVE_MEMORY_TOOL}' este projeto utiliza Maven e possui um pom.xml`, SAVE_MEMORY_TOOL), 'este projeto utiliza Maven e possui um pom.xml');
   assert.equal(stripToolReference(`'${SEARCH_MEMORY_TOOL}' procure conhecimento relacionado ao Maven`, SEARCH_MEMORY_TOOL), 'procure conhecimento relacionado ao Maven');
 });
+
+

@@ -5,7 +5,7 @@ import { OnnxLocalEmbeddingProvider } from './localEmbeddingProvider.js';
 import { LocalMemoryService } from './localMemoryService.js';
 import { registerMemoryTools } from './memoryTools.js';
 import { migrateJsonMemory } from './jsonMemoryMigration.js';
-import { MongoConnectionManager, redactUri } from './mongoConnectionManager.js';
+import { MongoConnectionManager, MongoLegacyIndexConflictError, redactUri } from './mongoConnectionManager.js';
 import { MongoInteractionStore } from './mongoInteractionStore.js';
 import { agentScopedHookRunnerState, installAgentScopedHookRunner, installationAt, isAgentScopedHookRunnerInstalled, removeLegacyGlobalInteractionHook, uninstallAgentScopedHookRunner } from './interactionHookInstallation.js';
 import { InteractionPromotionService } from './interactionPromotionService.js';
@@ -273,19 +273,23 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('aiDevAssistant.migrateLegacyMongoIndexes', async () => {
       const choice = await vscode.window.showWarningMessage(
-        'Migrar o índice legado do MongoDB? A operação criará e verificará um backup da coleção memories, verificará conflitos, criará o índice novo e só então removerá o índice legado.',
+        'Atualizar somente o índice legado do MongoDB? As memórias não serão apagadas; conflitos interrompem a operação antes de qualquer alteração.',
         { modal: true },
-        'Migrar índices',
+        'Atualizar índice',
       );
-      if (choice !== 'Migrar índices') return;
+      if (choice !== 'Atualizar índice') return;
       try {
         const result = await connection.migrateLegacyIndexes();
-        await connection.ensureIndexes();
         await vscode.window.showInformationMessage(
-          `${result.status === 'MIGRATED' ? 'Migração concluída' : 'Banco já migrado'}: ${result.documentCount} memória(s) preservada(s). Backup verificado em ${result.backupCollection}, SHA-256 ${result.backupSha256}.`,
+          result.status === 'NOT_REQUIRED'
+            ? 'Nenhum índice legado incompatível foi encontrado.'
+            : `Índice legado atualizado com segurança. ${result.preservedMemories} memória(s) ativa(s) preservada(s).`,
         );
       } catch (error) {
-        await vscode.window.showWarningMessage(`Migração de índices MongoDB não concluída: ${message(error)}`);
+        const detail = error instanceof MongoLegacyIndexConflictError
+          ? `${error.message} Nenhuma alteração foi feita.`
+          : message(error);
+        await vscode.window.showWarningMessage(`Migração do índice MongoDB não concluída: ${detail}`);
       }
     }),
     vscode.commands.registerCommand('aiDevAssistant.migrateLocalMemoryToMongoDB', async () => {
@@ -355,3 +359,4 @@ export function activate(context: vscode.ExtensionContext): void {
 
 function formatNumber(value: number): string { return value.toLocaleString('pt-BR'); }
 function message(error: unknown): string { return error instanceof Error ? error.message : 'erro desconhecido'; }
+

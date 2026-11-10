@@ -10,7 +10,7 @@ export interface ControlCenterAction {
 export const CONTROL_CENTER_ACTIONS: readonly ControlCenterAction[] = [
   { id: 'openCopilotChat', label: 'Abrir Copilot Chat', description: 'Abra o Chat nativo e selecione o agente AI Dev Assistant no seletor do Copilot.', command: 'workbench.action.chat.open', icon: 'comment-discussion' },
   { id: 'mongodbStatus', label: 'Verificar status do MongoDB', description: 'Consulta o MongoDB e verifica os índices.', command: 'aiDevAssistant.mongodbStatus', icon: 'database' },
-  { id: 'migrateLegacyMongoIndexes', label: 'Migrar índices legados do MongoDB', description: 'Cria backup verificável e migra o índice legado sem alterar memórias.', command: 'aiDevAssistant.migrateLegacyMongoIndexes', icon: 'sync' },
+  { id: 'migrateLegacyMongoIndexes', label: 'Atualizar índice legado', description: 'Migra com confirmação o índice legado sem apagar memórias.', command: 'aiDevAssistant.migrateLegacyMongoIndexes', icon: 'wrench' },
   { id: 'showStoredMemories', label: 'Consultar memórias armazenadas', description: 'Lista as memórias locais armazenadas.', command: 'aiDevAssistant.showStoredMemories', icon: 'library' },
   { id: 'showMemoryStatistics', label: 'Ver estatísticas de memória', description: 'Mostra a quantidade de memórias ativas e invalidadas.', command: 'aiDevAssistant.showMemoryStatistics', icon: 'graph' },
   { id: 'showInteractionStatistics', label: 'Ver estatísticas de captura', description: 'Mostra o estado das interações capturadas no workspace.', command: 'aiDevAssistant.showInteractionStatistics', icon: 'pulse' },
@@ -23,3 +23,4 @@ export class ControlCenterTreeModel {
     return CONTROL_CENTER_ACTIONS;
   }
 }
+
