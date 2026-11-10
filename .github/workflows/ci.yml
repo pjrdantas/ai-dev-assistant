@@ -111,3 +111,64 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
+
+      - name: Empacotar VSIX Windows para distribuição 0.1.14
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-v0.1.14-new-db]')
+        run: npx vsce package --dependencies --out ai-dev-assistant-0.1.14.vsix
+      - name: Disponibilizar VSIX Windows validado
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-v0.1.14-new-db]')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-dev-assistant-stable-windows-vsix
+          path: vscode-extension/ai-dev-assistant-0.1.14.vsix
+          if-no-files-found: error
+
+  publish-corrected-v0-1-14:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && contains(github.event.head_commit.message, '[publish-v0.1.14-new-db]')
+    needs: [validate, windows-installation-security]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Baixar instalador Windows aprovado pela CI
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-dev-assistant-stable-windows-vsix
+          path: dist
+      - name: Conferir instalador antes da publicação
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/ai-dev-assistant-0.1.14.vsix
+          unzip -p dist/ai-dev-assistant-0.1.14.vsix extension/package.json > /tmp/pacote.json
+          node -e 'const x=require("/tmp/pacote.json");if(x.version!=="0.1.14"||x.contributes.configuration.properties["aiDevAssistant.mongodb.database"].default!=="ai_dev_assistant_v2")process.exit(1)'
+          unzip -p dist/ai-dev-assistant-0.1.14.vsix extension/out/src/mongoHookConfiguration.js | grep -q 'ai_dev_assistant_v2'
+          sha256sum dist/ai-dev-assistant-0.1.14.vsix
+      - name: Atualizar tag e pacote da Release existente
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view v0.1.14 --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/v0.1.14" -f sha="$GITHUB_SHA" -F force=true
+          gh release upload v0.1.14 dist/ai-dev-assistant-0.1.14.vsix --repo "$GITHUB_REPOSITORY" --clobber
+          cat > /tmp/notas.md <<'NOTES'
+          **Distribuição oficial do AI Dev Assistant v0.1.14 para Visual Studio Code.**
+
+          Extensão integrada ao GitHub Copilot com memória local em MongoDB, busca exata e semântica.
+
+          **Banco de memória da distribuição:** `ai_dev_assistant_v2` no MongoDB configurado (por padrão, `mongodb://127.0.0.1:27017`). A configuração antiga `ai_dev_assistant` é redirecionada ao banco novo, inclusive em snapshots de hooks. **O banco legado não é consultado, migrado ou alterado. As memórias começam vazias no banco novo.**
+
+          **Arquivos oficiais:** instalador VSIX, Manual do Usuário, Guia de Comandos, Arquitetura e Tecnologias e Termo Oficial de Encerramento da Fase Funcional.
+
+          **Validação:** build e testes da CI, incluindo integração MongoDB isolada e verificações Windows. As metas quantitativas de economia de tokens continuam em desenvolvimento.
+          NOTES
+          gh release edit v0.1.14 --repo "$GITHUB_REPOSITORY" --title 'AI Dev Assistant v0.1.14 — Versão estável' --notes-file /tmp/notas.md
+          count="$(gh release view v0.1.14 --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')"
+          test "$count" -eq 5
+          localsha="$(sha256sum dist/ai-dev-assistant-0.1.14.vsix | cut -d' ' -f1)"
+          remotesha="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.1.14" --jq '.assets[] | select(.name=="ai-dev-assistant-0.1.14.vsix") | .digest')"
+          test "$remotesha" = "sha256:$localsha"
+          echo "RELEASE_OK sha256=$localsha assets=$count"

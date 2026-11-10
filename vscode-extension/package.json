@@ -171,8 +171,8 @@
         },
         "aiDevAssistant.mongodb.database": {
           "type": "string",
-          "default": "ai_dev_assistant",
-          "description": "Nome do database local do AI Dev Assistant."
+          "default": "ai_dev_assistant_v2",
+          "description": "Banco de memória ativo: ai_dev_assistant_v2. O nome legado ai_dev_assistant é redirecionado automaticamente, sem ler ou migrar dados antigos."
         }
       }
     }
@@ -205,4 +205,3 @@
   },
   "icon": "media/ai-dev-assistant-icon.png"
 }
-

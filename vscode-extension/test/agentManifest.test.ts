@@ -37,7 +37,7 @@ test('contribui o Custom Agent e as tools de memória sem restringir ferramentas
     { id: 'aiDevAssistant.view', name: 'Controle' },
   ]);
   assert.equal(manifest.contributes.configuration?.properties?.['aiDevAssistant.mongodb.uri']?.default, 'mongodb://127.0.0.1:27017');
-  assert.equal(manifest.contributes.configuration?.properties?.['aiDevAssistant.mongodb.database']?.default, 'ai_dev_assistant');
+  assert.equal(manifest.contributes.configuration?.properties?.['aiDevAssistant.mongodb.database']?.default, 'ai_dev_assistant_v2');
 
   const agent = (await readFile(join(extensionRoot, agentPath!), 'utf8')).replace(/\r\n/g, '\n');
   assert.match(agent, /^---[\s\S]*name: AI Dev Assistant/m);

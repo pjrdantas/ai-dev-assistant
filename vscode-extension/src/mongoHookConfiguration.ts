@@ -4,7 +4,8 @@ import { promisify } from 'node:util';
 import { dirname, join } from 'node:path';
 
 export const DEFAULT_MONGO_URI = 'mongodb://127.0.0.1:27017';
-export const DEFAULT_MONGO_DATABASE = 'ai_dev_assistant';
+export const DEFAULT_MONGO_DATABASE = 'ai_dev_assistant_v2';
+const LEGACY_MONGO_DATABASE = 'ai_dev_assistant';
 
 export interface MongoHookConfiguration {
   readonly uri: string;
@@ -32,7 +33,9 @@ export function normalizeMongoHookConfiguration(configuration: Partial<MongoHook
   if (database === undefined || database.length === 0 || /[\\/\."$\0]/.test(database)) {
     throw new MongoHookConfigurationError('Database MongoDB ausente ou inválido.');
   }
-  return { uri, database };
+  // A distribuição 0.1.14 não consulta nem altera a base antiga, inclusive quando
+  // ela ainda está fixada nas Settings ou em snapshots de hooks instalados.
+  return { uri, database: database === LEGACY_MONGO_DATABASE ? DEFAULT_MONGO_DATABASE : database };
 }
 
 export function defaultMongoHookConfiguration(): MongoHookConfiguration {

@@ -10,7 +10,7 @@ import test from 'node:test';
 import { MongoClient } from 'mongodb';
 
 import { installAgentScopedHookRunner } from '../src/interactionHookInstallation.js';
-import { DEFAULT_MONGO_DATABASE, DEFAULT_MONGO_URI, MongoHookConfigurationError, loadMongoHookConfiguration, readMongoHookConfiguration, writeMongoHookConfiguration } from '../src/mongoHookConfiguration.js';
+import { DEFAULT_MONGO_DATABASE, DEFAULT_MONGO_URI, MongoHookConfigurationError, normalizeMongoHookConfiguration, loadMongoHookConfiguration, readMongoHookConfiguration, writeMongoHookConfiguration } from '../src/mongoHookConfiguration.js';
 
 test('E3-001: o launcher do hook deve receber a mesma configuração Mongo da extensão', async () => {
   const home = await mkdtemp(join(tmpdir(), 'ai-dev-assistant-e3-001-'));
@@ -353,4 +353,20 @@ test('E3-001: runner rejeita --mongo-config ausente ou sem argumento e não usa 
     assert.equal(result.code, 0);
     assert.match(result.stderr, /exige --mongo-config com um caminho explícito/);
   }
+});
+
+test('v0.1.14: a base legada é abandonada inclusive em configurações e snapshots antigos', () => {
+  assert.equal(DEFAULT_MONGO_DATABASE, 'ai_dev_assistant_v2');
+  assert.deepEqual(
+    normalizeMongoHookConfiguration({ uri: DEFAULT_MONGO_URI, database: 'ai_dev_assistant' }),
+    { uri: DEFAULT_MONGO_URI, database: 'ai_dev_assistant_v2' },
+  );
+  assert.deepEqual(
+    normalizeMongoHookConfiguration({ uri: DEFAULT_MONGO_URI, database: 'ai_dev_assistant_v2' }),
+    { uri: DEFAULT_MONGO_URI, database: 'ai_dev_assistant_v2' },
+  );
+  assert.deepEqual(
+    normalizeMongoHookConfiguration({ uri: DEFAULT_MONGO_URI, database: 'synthetic_isolated_database' }),
+    { uri: DEFAULT_MONGO_URI, database: 'synthetic_isolated_database' },
+  );
 });
